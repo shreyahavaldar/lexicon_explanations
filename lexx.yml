@@ -1,0 +1,11 @@
+name: lexx
+channels:
+  - defaults
+dependencies:
+  - pytorch
+  - torchaudio
+  - pytorch-cuda=11.6
+  - torchvision
+  - pip:
+    - -r requirements.txt
+prefix: /home/steinad/anaconda3/envs/lexx
