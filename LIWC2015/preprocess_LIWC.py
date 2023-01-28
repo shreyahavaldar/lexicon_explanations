@@ -54,12 +54,18 @@ def preprocess_LIWC():
                 term=term.replace(")", "")
         if("*" in term):
             term_expansion = dictionary[term]
-            for t in term_expansion:
+            term_expansion.sort(key=lambda x: len(x))
+            # EVENTUALLY: sort by frequency
+            for t in term_expansion[:2]:
+                print(t)
                 processed_terms.append(t)
                 processed_categories.append(category)
         else:
             processed_terms.append(term)
             processed_categories.append(category)
+    
+    print(len(np.unique(LIWC2015["term"])))
+    print(len(np.unique(processed_terms)))
 
     processed_LIWC["term"] = processed_terms
     processed_LIWC["category"] = processed_categories
