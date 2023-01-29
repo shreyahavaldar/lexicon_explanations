@@ -5,6 +5,7 @@ from src.embed import embed_text
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
+import itertools
 
 
 class LIWCData(Dataset):
@@ -15,7 +16,16 @@ class LIWCData(Dataset):
             name='groups')
         liwc_df_train, liwc_df_test = train_test_split(
             liwc_df, test_size=0.2, random_state=42)
-        liwc_df = liwc_df_train if split == "train" else liwc_df_test
+        liwc_df_val, liwc_df_test = train_test_split(
+            liwc_df_test, test_size=0.5, random_state=42)
+
+        if split == "train":
+            liwc_df = liwc_df_train
+        elif split == "val":
+            liwc_df = liwc_df_val
+        elif split == "test":
+            liwc_df = liwc_df_test
+
         self.data = liwc_df
         self.len = len(liwc_df)
 
@@ -45,13 +55,14 @@ class PairData(Dataset):
     def __init__(self, liwc_data):
         self.liwc_data = liwc_data
         self.orig_len = len(self.liwc_data)
+        self.idxs = list(itertools.combinations(list(range(self.orig_len)), r=2))
 
     def __len__(self):
-        return self.orig_len * self.orig_len
+        return len(self.idxs)
 
     def __getitem__(self, idx):
-        i = idx // self.orig_len
-        j = idx % self.orig_len
+        i = self.idxs[idx][0]
+        j = self.idxs[idx][1]
         # print(i, j)
         word1, groups1 = self.liwc_data[i]
         word2, groups2 = self.liwc_data[j]
