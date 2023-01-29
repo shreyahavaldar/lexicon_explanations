@@ -31,24 +31,17 @@ def main():
 
     train_dataloader = DataLoader(
         data_train,
-        batch_size=256,
+        batch_size=40000,
         shuffle=True,
-        num_workers=0)
+        num_workers=16)
     # test_dataloader = DataLoader(data_test, batch_size=64, shuffle=True)
 
     net = Net().cuda()
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.Adam(net.parameters(), lr=1e-2)
 
-    # for i in tqdm(range(len(data_train))):
-    #     data, label = data_train[i]
-    # print("finished test")
-
-    # print(data_train[0])
-    # print(data_train[1])
-
-    for epoch in range(1):
+    for epoch in range(100):
         for i, data in enumerate(tqdm(train_dataloader)):
             inputs, labels = data
             optimizer.zero_grad()
@@ -58,9 +51,9 @@ def main():
             optimizer.step()
 
             # if i % 200 == 199:
-            print(f"epoch: {epoch}, loss: {loss.item()}")
-            if i % 100 == 99:
-                save(net.state_dict(), "net")
+            if i % 10 == 0:
+                tqdm.write(f"epoch: {epoch}, loss: {loss.item()}")
+        save(net.state_dict(), f"net_{epoch}")
 
 
 if __name__ == "__main__":

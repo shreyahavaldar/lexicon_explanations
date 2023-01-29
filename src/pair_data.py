@@ -10,25 +10,25 @@ from tqdm import tqdm
 class LIWCData(Dataset):
     def __init__(self, data_csv, split="train"):
         liwc_df = pd.read_csv(data_csv)
-        liwc_df_train, liwc_df_test = train_test_split(
-            liwc_df, test_size=0.2, random_state=42)
-        liwc_df = liwc_df_train if split == "train" else liwc_df_test
         liwc_df = liwc_df.groupby(
             by=["term"])["category"].apply(set).reset_index(
             name='groups')
+        liwc_df_train, liwc_df_test = train_test_split(
+            liwc_df, test_size=0.2, random_state=42)
+        liwc_df = liwc_df_train if split == "train" else liwc_df_test
         self.data = liwc_df
         self.len = len(liwc_df)
 
-        self.tokenizer = AutoTokenizer.from_pretrained("roberta-large")
-        self.model = AutoModel.from_pretrained("roberta-large").cuda()
+        tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+        model = AutoModel.from_pretrained("roberta-large").cuda()
 
         embeddings = []
         for i in tqdm(range(self.len)):
             embeddings.append(
                 embed_text(
-                    self.model,
-                    self.tokenizer,
-                    self.data.iloc[i]["term"]))
+                    model,
+                    tokenizer,
+                    self.data.iloc[i]["term"]).cpu())
         self.embeddings = torch.stack(embeddings)
 
     def __len__(self):
@@ -59,5 +59,5 @@ class PairData(Dataset):
         label = 1
         if len(groups1.intersection(groups2)) > 0:
             label = 0
-        concat_embed = torch.concat([word1, word2], dim=0)
+        concat_embed = torch.concat([word1, word2], dim=1).flatten()
         return concat_embed, label
