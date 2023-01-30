@@ -1,6 +1,6 @@
 from torch.utils.data import DataLoader
 from src.embed import embed_text
-from src.pair_data import LIWCData, PairData
+from src.pair_data import LIWCEmbedData, PairData
 from src.model import Net
 import torch.optim as optim
 import torch.nn as nn
@@ -15,7 +15,7 @@ def main():
     data_test = load("data_test")
     data_train = load("data_train")
     model = Net()
-    model.load_state_dict(load("net_6"))
+    model.load_state_dict(load("net_1"))
     print(test(model, data_test))
     print(test(model, data_train))
 

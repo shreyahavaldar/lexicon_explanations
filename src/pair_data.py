@@ -1,14 +1,14 @@
 import torch
 from torch.utils.data import Dataset
 from transformers import AutoTokenizer, AutoModel
-from src.embed import embed_text
+from src.embed import embed_text, tokenize_text
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 import itertools
 
 
-class LIWCData(Dataset):
+class LIWCEmbedData(Dataset):
     def __init__(self, data_csv, split="train"):
         liwc_df = pd.read_csv(data_csv)
         liwc_df = liwc_df.groupby(
@@ -51,6 +51,42 @@ class LIWCData(Dataset):
         return emb, word["groups"]
 
 
+class LIWCTokenData(Dataset):
+    def __init__(self, data_csv, split="train"):
+        liwc_df = pd.read_csv(data_csv)
+        liwc_df = liwc_df.groupby(
+            by=["term"])["category"].apply(set).reset_index(
+            name='groups')
+        liwc_df_train, liwc_df_test = train_test_split(
+            liwc_df, test_size=0.2, random_state=42)
+        liwc_df_val, liwc_df_test = train_test_split(
+            liwc_df_test, test_size=0.5, random_state=42)
+
+        if split == "train":
+            liwc_df = liwc_df_train
+        elif split == "val":
+            liwc_df = liwc_df_val
+        elif split == "test":
+            liwc_df = liwc_df_test
+
+        self.data = liwc_df
+        self.len = len(liwc_df)
+
+        tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+
+        self.tokens = tokenize_text(
+            tokenizer, list(
+                self.data["term"].to_list()))
+
+    def __len__(self):
+        return self.len
+
+    def __getitem__(self, idx):
+        word = self.data.iloc[idx]
+        toks = {k: v[idx] for k, v in self.tokens.items()}
+        return toks, word["groups"]
+
+
 class PairData(Dataset):
     def __init__(self, liwc_data):
         self.liwc_data = liwc_data
@@ -70,5 +106,5 @@ class PairData(Dataset):
         label = 1
         if len(groups1.intersection(groups2)) > 0:
             label = 0
-        concat_embed = torch.concat([word1, word2], dim=1).flatten()
-        return concat_embed, label
+        # concat_embed = torch.concat([word1, word2], dim=1).flatten()
+        return (word1.flatten(), word2.flatten()), label

@@ -1,7 +1,7 @@
 import torch
 from tqdm import tqdm
 from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score, precision_score, recall_score, mean_squared_error
+from sklearn.metrics import balanced_accuracy_score, f1_score, accuracy_score, precision_score, recall_score, mean_squared_error
 import numpy as np
 import copy
 import torch.multiprocessing
@@ -20,11 +20,11 @@ def test(model, data):
     preds = []
     gt = []
     for i, data in enumerate(tqdm(test_dataloader)):
-        inputs, labels = data
+        (word1, word2), labels = data
         label_cp = copy.deepcopy(labels)
         del labels
         with torch.no_grad():
-            outputs = model(inputs.cuda()).cpu()
+            outputs = model(word1.cuda(), word2.cuda()).cpu()
         preds.append(torch.round(torch.sigmoid(outputs)))
         gt.append(label_cp)
     preds = torch.concat(preds, dim=0).numpy()
@@ -33,7 +33,8 @@ def test(model, data):
     print(gt)
 
     metrics = {
-        "accuracy": accuracy_score(gt, preds),
+        "accuracy": balanced_accuracy_score(gt, preds),
+        "f1-score": f1_score(1 - gt, 1 - preds),
         "recall": recall_score(gt, preds),
         "inverse-recall": recall_score(1 - gt, 1 - preds),
         "precision": precision_score(gt, preds),

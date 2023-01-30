@@ -24,3 +24,11 @@ def embed_text(model, tokenizer, text):
     embedding = mean_pooling(output, encoded_input['attention_mask'])
     embedding = F.normalize(embedding, p=2, dim=1)
     return embedding
+
+
+def tokenize_text(tokenizer, text):
+    return tokenizer(
+        text,
+        padding=True,
+        truncation=True,
+        return_tensors='pt')
