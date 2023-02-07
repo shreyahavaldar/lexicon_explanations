@@ -29,8 +29,10 @@ class LIWCEmbedData(Dataset):
         self.data = liwc_df
         self.len = len(liwc_df)
 
-        tokenizer = AutoTokenizer.from_pretrained("roberta-large")
-        model = AutoModel.from_pretrained("roberta-large").cuda()
+        tokenizer = AutoTokenizer.from_pretrained(
+            'sentence-transformers/all-MiniLM-L6-v2')
+        model = AutoModel.from_pretrained(
+            'sentence-transformers/all-MiniLM-L6-v2').cuda()
 
         embeddings = []
         for i in tqdm(range(self.len)):
@@ -51,9 +53,11 @@ class LIWCEmbedData(Dataset):
         return emb, word["groups"]
 
 
-class LIWCTokenData(Dataset):
+class LIWCWordData(Dataset):
     def __init__(self, data_csv, split="train"):
         liwc_df = pd.read_csv(data_csv)
+        self.groups = liwc_df["category"].unique()
+        self.groups.sort()
         liwc_df = liwc_df.groupby(
             by=["term"])["category"].apply(set).reset_index(
             name='groups')
@@ -72,7 +76,38 @@ class LIWCTokenData(Dataset):
         self.data = liwc_df
         self.len = len(liwc_df)
 
-        tokenizer = AutoTokenizer.from_pretrained("roberta-large")
+    def __len__(self):
+        return self.len
+
+    def __getitem__(self, idx):
+        word = self.data.iloc[idx]
+        return word["term"], word["groups"]
+
+class LIWCTokenData(Dataset):
+    def __init__(self, data_csv, split="train"):
+        liwc_df = pd.read_csv(data_csv)
+        self.groups = liwc_df["category"].unique()
+        self.groups.sort()
+        liwc_df = liwc_df.groupby(
+            by=["term"])["category"].apply(set).reset_index(
+            name='groups')
+        liwc_df_train, liwc_df_test = train_test_split(
+            liwc_df, test_size=0.2, random_state=42)
+        liwc_df_val, liwc_df_test = train_test_split(
+            liwc_df_test, test_size=0.5, random_state=42)
+
+        if split == "train":
+            liwc_df = liwc_df_train
+        elif split == "val":
+            liwc_df = liwc_df_val
+        elif split == "test":
+            liwc_df = liwc_df_test
+
+        self.data = liwc_df
+        self.len = len(liwc_df)
+
+        tokenizer = AutoTokenizer.from_pretrained(
+            'sentence-transformers/all-MiniLM-L6-v2')
 
         self.tokens = tokenize_text(
             tokenizer, list(
@@ -107,4 +142,5 @@ class PairData(Dataset):
         if len(groups1.intersection(groups2)) > 0:
             label = 0
         # concat_embed = torch.concat([word1, word2], dim=1).flatten()
-        return (word1.flatten(), word2.flatten()), label
+        # return (word1.flatten(), word2.flatten()), label
+        return (word1, word2), label
