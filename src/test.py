@@ -11,7 +11,7 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 def test(model, data):
     test_dataloader = DataLoader(
         data,
-        batch_size=5000,
+        batch_size=10000,
         shuffle=False,
         num_workers=16)
 
@@ -21,10 +21,12 @@ def test(model, data):
     gt = []
     for i, data in enumerate(tqdm(test_dataloader)):
         (word1, word2), labels = data
+        word1 = {k: v.cuda() for k, v in word1.items()}
+        word2 = {k: v.cuda() for k, v in word2.items()}
         label_cp = copy.deepcopy(labels)
         del labels
         with torch.no_grad():
-            outputs = model(word1.cuda(), word2.cuda()).cpu()
+            outputs = model(word1, word2).cpu()
         preds.append(torch.round(torch.sigmoid(outputs)))
         gt.append(label_cp)
     preds = torch.concat(preds, dim=0).numpy()

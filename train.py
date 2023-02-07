@@ -1,7 +1,7 @@
 from torch.utils.data import DataLoader
 from src.embed import embed_text
 from src.pair_data import LIWCTokenData, LIWCEmbedData, PairData
-from src.model import Net, PretrainedBERT
+from src.model import Net, PretrainedBERT, NetWithRoberta
 import torch.optim as optim
 import torch.nn as nn
 import torch
@@ -40,7 +40,7 @@ class CustomWeightedRandomSampler(WeightedRandomSampler):
 def main():
     data_train = load("data_train")
     if data_train is None:
-        data_train = PairData(LIWCEmbedData(
+        data_train = PairData(LIWCTokenData(
             "data/LIWC2015_processed.csv",
             split="train"))
         save(data_train, "data_train")
@@ -48,7 +48,7 @@ def main():
     data_test = load("data_test")
     if data_test is None:
         data_test = PairData(
-            LIWCEmbedData(
+            LIWCTokenData(
                 "data/LIWC2015_processed.csv",
                 split="val"))
         save(data_test, "data_test")
@@ -58,9 +58,6 @@ def main():
         batch_size=20000,
         shuffle=False,
         num_workers=32)
-
-    print(data_train[0])
-    print(data_train[0][0][0].shape)
 
     y = load("y_train")
     if y is None:
@@ -74,22 +71,24 @@ def main():
 
     train_dataloader = DataLoader(
         data_train,
-        batch_size=20000,
+        batch_size=2500,
         # shuffle=True,
         sampler=sampler,
         num_workers=16)
     # test_dataloader = DataLoader(data_test, batch_size=64, shuffle=True)
 
-    net = Net().cuda()
+    net = NetWithRoberta().cuda()
 
     criterion = nn.BCEWithLogitsLoss()
-    optimizer = optim.AdamW(net.parameters(), lr=1e-3)
+    optimizer = optim.AdamW(net.parameters(), lr=1e-4, weight_decay=1e-1)
 
     for epoch in range(100):
         for i, data in enumerate(tqdm(train_dataloader)):
             (inputs1, inputs2), labels = data
-            inputs1 = inputs1.cuda()
-            inputs2 = inputs2.cuda()
+            # inputs1 = inputs1.cuda()
+            # inputs2 = inputs2.cuda()
+            inputs1 = {k: v.cuda() for k, v in inputs1.items()}
+            inputs2 = {k: v.cuda() for k, v in inputs2.items()}
             # print("Fraction of 1s:", torch.sum(labels) / labels.shape[0])
             optimizer.zero_grad()
             outputs = net(inputs1, inputs2)
