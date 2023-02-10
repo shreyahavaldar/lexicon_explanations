@@ -9,5 +9,7 @@ def save(obj, name):
 def load(name):
     if os.path.isfile(os.path.join("output", name + ".pt")):
         return torch.load(os.path.join("output", name + ".pt"))
+    elif os.path.isfile(os.path.join("../output", name + ".pt")):
+        return torch.load(os.path.join("../output", name + ".pt"))
     else:
         return None
