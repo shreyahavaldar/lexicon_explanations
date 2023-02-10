@@ -8,5 +8,9 @@ setup(name='lexx',
       install_requires=[
           'datasets',
           'transformers',
+          'tqdm',
+          'torch',
+          'numpy',
+          'pandas',
       ],
       )
