@@ -13,7 +13,7 @@ def train(config, pipeline, train_data, val_data):
         resume = True
 
     if os.path.exists(log_dir + "/pytorch_model.bin"):
-        pipeline.model.from_pretrained(log_dir)
+        pipeline.model = pipeline.model.from_pretrained(log_dir).cuda()
         return
 
     training_args = TrainingArguments(output_dir=log_dir, evaluation_strategy="epoch")
