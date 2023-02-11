@@ -17,7 +17,10 @@ def train(config, pipeline, train_data, val_data):
         return
 
     training_args = TrainingArguments(output_dir=log_dir, evaluation_strategy="epoch")
-    metric = evaluate.load("accuracy")
+    if dataset_name == "emobank":
+        metric = evaluate.load("mse")
+    else:
+        metric = evaluate.load("accuracy")
 
     def tokenize_function(examples):
         return pipeline.tokenizer(examples["sentence"], padding="max_length", truncation=True, max_length=256)
@@ -28,7 +31,10 @@ def train(config, pipeline, train_data, val_data):
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
-        predictions = np.argmax(logits, axis=-1)
+        if dataset_name != "emobank":
+            predictions = np.argmax(logits, axis=-1)
+        else:
+            predictions = logits
         return metric.compute(predictions=predictions, references=labels)
 
     trainer = Trainer(
