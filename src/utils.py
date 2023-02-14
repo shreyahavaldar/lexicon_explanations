@@ -11,7 +11,16 @@ from src.pair_data import LIWCWordData
 from tqdm import tqdm
 import pandas as pd
 from pathlib import Path
-
+import gensim
+from gensim.corpora.dictionary import Dictionary
+from gensim.models import LdaModel
+import nltk
+nltk.download('stopwords')
+nltk.download('wordnet')
+from nltk.corpus import stopwords
+from nltk.stem.wordnet import WordNetLemmatizer
+from gensim.models import Phrases
+import pprint
 
 
 def save(obj, name):
@@ -60,6 +69,44 @@ def get_topics(config, data):
     if config["topics"] == "liwc":
         return get_liwc_topics()
     elif config["topics"] == "lda":
+        stop_words = stopwords.words('english')
+        data = [gensim.utils.simple_preprocess(s, deacc=True) for s in data]
+
+        # Lemmatize all words in documents.
+        lemmatizer = WordNetLemmatizer()
+        data = [[lemmatizer.lemmatize(token) for token in doc] for doc in data]
+
+        # bigram = Phrases(data, min_count=20)
+        # for idx in range(len(data)):
+        #     for token in bigram[data[idx]]:
+        #         if '_' in token:
+        #             # Token is a bigram, add to document.
+        #             data[idx].append(token)
+
+        # Create a corpus from a list of texts
+        common_dictionary = Dictionary(data)
+        common_dictionary.filter_n_most_frequent(100)
+        common_dictionary.filter_extremes(no_below=20, no_above=0.6)
+        print(len(common_dictionary))
+
+        common_corpus = [common_dictionary.doc2bow(text) for text in data]
+        common_corpus = [d for d in common_corpus if len(d) > 0]
+        cnt = 0
+        for doc in common_corpus:
+            if len(doc) == 0:
+                cnt += 1
+        print(len(common_corpus), cnt)
+
+        temp = common_dictionary[0]  # This is only to "load" the dictionary.
+        id2word = common_dictionary.id2token
+
+
+        # Train the model on the corpus.
+        lda = LdaModel(corpus=common_corpus, id2word=id2word, num_topics=30, passes=20, iterations=400)
+        print(lda.get_topics())
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(lda.print_topics(num_words=20))
+
         raise NotImplementedError
     else:
         raise NotImplementedError
@@ -151,6 +198,14 @@ def load_data(config):
     elif dataset_name == "cola":
         cola_train = load_dataset("glue", "cola", split="train")
         cola_val = load_dataset("glue", "cola", split="validation")
+        return cola_train, cola_val
+    elif dataset_name == "tweet":
+        cola_train = load_dataset("ought/raft", "tweet_eval_hate", split="train")
+        cola_train = cola_train.rename_column("Tweet", "sentence")
+        cola_train = cola_train.rename_column("Label", "labels")
+        cola_val = load_dataset("ought/raft", "tweet_eval_hate", split="test")
+        cola_val = cola_val.rename_column("Tweet", "sentence")
+        cola_val = cola_val.rename_column("Label", "labels")
         return cola_train, cola_val
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')

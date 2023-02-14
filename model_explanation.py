@@ -13,14 +13,15 @@ import pandas as pd
 
 
 def main():
-    config = {"dataset": "cola", "topics": "liwc"}
-    model1, model2 = load_models(config)
+    config = {"dataset": "tweet", "topics": "lda"}
+    # model1, model2 = load_models(config)
 
     data_train, data_val = load_data(config)
+    print(len(data_train), len(data_val))
     x = [data_val[i]['sentence'] for i in range(len(data_val))]
     x = [xi for xi in x if len(xi.split()) > 1]
 
-    topics, topic_names, word2idx = get_topics(config, data_train)
+    topics, topic_names, word2idx = get_topics(config, x)
 
     train(config, model1, data_train, data_val)
     topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx)
