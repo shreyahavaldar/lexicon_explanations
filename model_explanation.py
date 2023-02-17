@@ -13,7 +13,7 @@ import pandas as pd
 
 
 def main():
-    config = {"dataset": "blog", "topics": "lda"}
+    config = {"dataset": "goemotions", "topics": "neurallda"}
     # model1, model2 = load_models(config)
 
     data_train, data_val = load_data(config)
@@ -21,7 +21,7 @@ def main():
     x = [data_train[i]['sentence'] for i in range(len(data_train))]
     x = [xi for xi in x if len(xi.split()) > 1]
 
-    topics, topic_names, word2idx = get_topics(config, x)
+    topics, word2idx = get_topics(config, x)
 
     train(config, model1, data_train, data_val)
     topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx)

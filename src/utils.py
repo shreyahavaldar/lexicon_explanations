@@ -22,6 +22,17 @@ from nltk.stem.wordnet import WordNetLemmatizer
 from gensim.models import Phrases
 import pprint
 from sklearn.model_selection import train_test_split
+import string
+from octis.preprocessing.preprocessing import Preprocessing
+from octis.dataset.dataset import Dataset as octDataset
+from octis.models.LDA import LDA
+from octis.models.NeuralLDA import NeuralLDA
+from octis.models.ETM import ETM
+from octis.models.CTM import CTM
+from octis.optimization.optimizer import Optimizer
+from skopt.space.space import Real, Categorical, Integer
+from octis.evaluation_metrics.coherence_metrics import Coherence
+import csv
 
 
 def save(obj, name):
@@ -69,59 +80,39 @@ def sort_shap(shap_values, feature_names):
 def get_topics(config, data):
     if config["topics"] == "liwc":
         return get_liwc_topics()
-    elif config["topics"] == "lda":
-        from contextualized_topic_models.models.ctm import CombinedTM, ZeroShotTM
-        from contextualized_topic_models.utils.data_preparation import TopicModelDataPreparation
-        from contextualized_topic_models.utils.data_preparation import bert_embeddings_from_file
+    elif config["topics"] == "ctm" or config["topics"] == "neurallda":
+        base_path = Path(__file__).parent
+        data_name = f"{config['dataset']}_raw.txt"
+        
+        if not os.path.isfile(base_path / "../data" / data_name):
+            with open(base_path / ("../data/" + data_name), "w", newline="") as csvfile:
+                writer = csv.writer(csvfile, delimiter="\t")
+                for line in data:
+                    writer.writerow([line])
 
-        stop_words = stopwords.words('english')
-        data_orig = data
-        data = [gensim.utils.simple_preprocess(s, deacc=True) for s in data]
+        if not os.path.exists(base_path / "../data" / (config["dataset"] + "_preprocessed")):
+            preprocessor = Preprocessing(vocabulary=None, max_features=None, remove_punctuation=True, punctuation=string.punctuation, lemmatize=True, stopword_list="english", min_chars=1, min_words_docs=0)
+            dataset = preprocessor.preprocess_dataset(documents_path=(base_path / ("../data/" + data_name)))
+            dataset.save("data/" + config["dataset"] + "_preprocessed")
 
-        # Lemmatize all words in documents.
-        lemmatizer = WordNetLemmatizer()
-        data = [[lemmatizer.lemmatize(token) for token in doc if token not in stop_words] for doc in data]
+        dataset = octDataset()
+        dataset.load_custom_dataset_from_folder("data/" + config["dataset"] + "_preprocessed")
+        # npmi = Coherence(texts=dataset.get_corpus())
 
-        # bigram = Phrases(data, min_count=20)
-        # for idx in range(len(data)):
-        #     for token in bigram[data[idx]]:
-        #         if '_' in token:
-        #             # Token is a bigram, add to document.
-        #             data[idx].append(token)
+        if config["topics"] == "ctm":
+            model = CTM(num_topics=25, num_epochs=30, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
+        else:
+            model = NeuralLDA(num_topics=25)
 
-        # Create a corpus from a list of texts
-        # common_dictionary = Dictionary(data)
-        # common_dictionary.filter_n_most_frequent(100)
-        # common_dictionary.filter_extremes(no_below=20, no_above=0.6)
-        # print(len(common_dictionary))
-
-        # common_corpus = [common_dictionary.doc2bow(text) for text in data]
-        # common_corpus = [d for d in common_corpus if len(d) > 0]
-        # cnt = 0
-        # for doc in common_corpus:
-        #     if len(doc) == 0:
-        #         cnt += 1
-        # print(len(common_corpus), cnt)
-
-        # temp = common_dictionary[0]  # This is only to "load" the dictionary.
-        # id2word = common_dictionary.id2token
-
-        # qt = TopicModelDataPreparation("all-mpnet-base-v2")
-        qt = TopicModelDataPreparation("paraphrase-multilingual-mpnet-base-v2")
-        training_dataset = qt.fit(text_for_contextual=data_orig, text_for_bow=[" ".join(d) for d in data])
-        ctm = CombinedTM(bow_size=len(qt.vocab), contextual_size=768, n_components=20) # 20 topics
-        ctm.fit(training_dataset) # run the model
-        print(ctm.get_topics())
-
-
-        # Train the model on the corpus.
-        # lda = LdaModel(corpus=common_corpus, id2word=id2word, num_topics=10, passes=20, iterations=400)
-        # lda = HdpModel(corpus=common_corpus, id2word=id2word)
-        # print(lda.get_topics())
-        # pp = pprint.PrettyPrinter(indent=4)
-        # pp.pprint(lda.print_topics(num_words=20))
-
-        raise NotImplementedError
+        # search_space = {"num_layers": Categorical({1, 2, 3}), 
+        #         "num_neurons": Categorical({100, 200, 300}),
+        #         "activation": Categorical({'sigmoid', 'relu', 'softplus'}), 
+        #         "dropout": Real(0.0, 0.95)
+        # }
+        model_output = model.train_model(dataset)
+        print(model_output)
+        word2idx = {word: i for i, word in enumerate(dataset.get_vocabulary())}
+        return model_output["topic-word-matrix"], word2idx
     else:
         raise NotImplementedError
 
