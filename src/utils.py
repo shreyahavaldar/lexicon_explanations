@@ -13,7 +13,7 @@ import pandas as pd
 from pathlib import Path
 import gensim
 from gensim.corpora.dictionary import Dictionary
-from gensim.models import LdaModel
+from gensim.models import LdaModel, HdpModel
 import nltk
 nltk.download('stopwords')
 nltk.download('wordnet')
@@ -21,6 +21,7 @@ from nltk.corpus import stopwords
 from nltk.stem.wordnet import WordNetLemmatizer
 from gensim.models import Phrases
 import pprint
+from sklearn.model_selection import train_test_split
 
 
 def save(obj, name):
@@ -69,12 +70,17 @@ def get_topics(config, data):
     if config["topics"] == "liwc":
         return get_liwc_topics()
     elif config["topics"] == "lda":
+        from contextualized_topic_models.models.ctm import CombinedTM, ZeroShotTM
+        from contextualized_topic_models.utils.data_preparation import TopicModelDataPreparation
+        from contextualized_topic_models.utils.data_preparation import bert_embeddings_from_file
+
         stop_words = stopwords.words('english')
+        data_orig = data
         data = [gensim.utils.simple_preprocess(s, deacc=True) for s in data]
 
         # Lemmatize all words in documents.
         lemmatizer = WordNetLemmatizer()
-        data = [[lemmatizer.lemmatize(token) for token in doc] for doc in data]
+        data = [[lemmatizer.lemmatize(token) for token in doc if token not in stop_words] for doc in data]
 
         # bigram = Phrases(data, min_count=20)
         # for idx in range(len(data)):
@@ -84,28 +90,36 @@ def get_topics(config, data):
         #             data[idx].append(token)
 
         # Create a corpus from a list of texts
-        common_dictionary = Dictionary(data)
-        common_dictionary.filter_n_most_frequent(100)
-        common_dictionary.filter_extremes(no_below=20, no_above=0.6)
-        print(len(common_dictionary))
+        # common_dictionary = Dictionary(data)
+        # common_dictionary.filter_n_most_frequent(100)
+        # common_dictionary.filter_extremes(no_below=20, no_above=0.6)
+        # print(len(common_dictionary))
 
-        common_corpus = [common_dictionary.doc2bow(text) for text in data]
-        common_corpus = [d for d in common_corpus if len(d) > 0]
-        cnt = 0
-        for doc in common_corpus:
-            if len(doc) == 0:
-                cnt += 1
-        print(len(common_corpus), cnt)
+        # common_corpus = [common_dictionary.doc2bow(text) for text in data]
+        # common_corpus = [d for d in common_corpus if len(d) > 0]
+        # cnt = 0
+        # for doc in common_corpus:
+        #     if len(doc) == 0:
+        #         cnt += 1
+        # print(len(common_corpus), cnt)
 
-        temp = common_dictionary[0]  # This is only to "load" the dictionary.
-        id2word = common_dictionary.id2token
+        # temp = common_dictionary[0]  # This is only to "load" the dictionary.
+        # id2word = common_dictionary.id2token
+
+        # qt = TopicModelDataPreparation("all-mpnet-base-v2")
+        qt = TopicModelDataPreparation("paraphrase-multilingual-mpnet-base-v2")
+        training_dataset = qt.fit(text_for_contextual=data_orig, text_for_bow=[" ".join(d) for d in data])
+        ctm = CombinedTM(bow_size=len(qt.vocab), contextual_size=768, n_components=20) # 20 topics
+        ctm.fit(training_dataset) # run the model
+        print(ctm.get_topics())
 
 
         # Train the model on the corpus.
-        lda = LdaModel(corpus=common_corpus, id2word=id2word, num_topics=30, passes=20, iterations=400)
-        print(lda.get_topics())
-        pp = pprint.PrettyPrinter(indent=4)
-        pp.pprint(lda.print_topics(num_words=20))
+        # lda = LdaModel(corpus=common_corpus, id2word=id2word, num_topics=10, passes=20, iterations=400)
+        # lda = HdpModel(corpus=common_corpus, id2word=id2word)
+        # print(lda.get_topics())
+        # pp = pprint.PrettyPrinter(indent=4)
+        # pp.pprint(lda.print_topics(num_words=20))
 
         raise NotImplementedError
     else:
@@ -207,6 +221,18 @@ def load_data(config):
         cola_val = cola_val.rename_column("Tweet", "sentence")
         cola_val = cola_val.rename_column("Label", "labels")
         return cola_train, cola_val
+    elif dataset_name == "goemotions":
+        goemotions_train = load_dataset("go_emotions", "simplified", split="train")
+        goemotions_train = goemotions_train.rename_column("text", "sentence")
+        goemotions_val = load_dataset("go_emotions", "simplified", split="validation")
+        goemotions_val = goemotions_val.rename_column("text", "sentence")
+        return goemotions_train, goemotions_val
+    elif dataset_name == "blog":
+        blog_train = load_dataset("blog_authorship_corpus", split="train")
+        blog_train = blog_train.rename_column("text", "sentence")
+        blog_val = load_dataset("blog_authorship_corpus", split="validation")
+        blog_val = blog_val.rename_column("text", "sentence")
+        return blog_train, blog_val
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')
         emobank['labels'] = emobank[['V', 'A', 'D']].sum(axis=1) / 3
@@ -216,6 +242,10 @@ def load_data(config):
         return emobank_train, emobank_dev
     elif dataset_name == "polite":
         polite = pd.read_csv(base_path / '../data/wikipedia.annotated.csv')
-        raise NotImplementedError
+        polite = polite.rename({"Request": "sentence", "Normalized Score": "labels"}, axis=1)
+        polite_train, polite_test = train_test_split(polite, test_size=0.2)
+        polite_train = Dataset.from_pandas(polite_train[["sentence", "labels"]])
+        polite_test = Dataset.from_pandas(polite_test[["sentence", "labels"]])
+        return polite_train, polite_test
     else:
         raise NotImplementedError

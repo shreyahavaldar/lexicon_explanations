@@ -13,12 +13,12 @@ import pandas as pd
 
 
 def main():
-    config = {"dataset": "tweet", "topics": "lda"}
+    config = {"dataset": "blog", "topics": "lda"}
     # model1, model2 = load_models(config)
 
     data_train, data_val = load_data(config)
     print(len(data_train), len(data_val))
-    x = [data_val[i]['sentence'] for i in range(len(data_val))]
+    x = [data_train[i]['sentence'] for i in range(len(data_train))]
     x = [xi for xi in x if len(xi.split()) > 1]
 
     topics, topic_names, word2idx = get_topics(config, x)
