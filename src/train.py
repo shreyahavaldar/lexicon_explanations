@@ -2,6 +2,8 @@ from transformers import TrainingArguments, Trainer
 import numpy as np
 import evaluate
 import os
+import torch
+from sklearn.metrics import f1_score
 
 def train(config, pipeline, train_data, val_data):
     dataset_name = config["dataset"]
@@ -31,10 +33,14 @@ def train(config, pipeline, train_data, val_data):
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
+        if dataset_name == "goemotions":
+            pred = torch.from_numpy(logits).sigmoid() > 0.5
+            return {"f1-average": f1_score(pred, labels, average='weighted')}
         if dataset_name != "emobank":
             predictions = np.argmax(logits, axis=-1)
         else:
             predictions = logits
+
         return metric.compute(predictions=predictions, references=labels)
 
     trainer = Trainer(
