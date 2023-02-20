@@ -5,7 +5,7 @@ import numpy as np
 import scipy as sp
 import shap
 import transformers
-from datasets import load_dataset, Dataset
+from datasets import load_dataset, Dataset, Sequence, Value, Features
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
 from src.pair_data import LIWCWordData
 from tqdm import tqdm
@@ -83,7 +83,7 @@ def sort_shap(shap_values, feature_names):
 def get_topics(config, data):
     if config["topics"] == "liwc":
         return get_liwc_topics()
-    elif config["topics"] == "ctm" or config["topics"] == "neurallda":
+    elif config["topics"] == "ctm" or config["topics"] == "neurallda" or config["topics"] == "lda":
         base_path = Path(__file__).parent
         data_name = f"{config['dataset']}_raw.txt"
         
@@ -94,7 +94,17 @@ def get_topics(config, data):
                     writer.writerow([line])
 
         if not os.path.exists(base_path / "../data" / (config["dataset"] + "_preprocessed")):
-            preprocessor = Preprocessing(vocabulary=None, max_features=None, remove_punctuation=True, punctuation=string.punctuation, lemmatize=True, stopword_list="english", min_chars=1, min_words_docs=0)
+            preprocessor = Preprocessing(
+                num_processes=32,
+                vocabulary=None,
+                max_features=None,
+                remove_punctuation=True,
+                punctuation=string.punctuation,
+                lemmatize=True,
+                stopword_list="english",
+                min_chars=1,
+                min_words_docs=0,
+                max_df=0.95)
             dataset = preprocessor.preprocess_dataset(documents_path=(base_path / ("../data/" + data_name)))
             dataset.save("data/" + config["dataset"] + "_preprocessed")
 
@@ -103,9 +113,11 @@ def get_topics(config, data):
         # npmi = Coherence(texts=dataset.get_corpus())
 
         if config["topics"] == "ctm":
-            model = CTM(num_topics=25, num_epochs=30, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
+            model = CTM(num_topics=10, num_epochs=35, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
+        elif config["topics"] == "neurallda":
+            model = NeuralLDA(num_topics=35, lr=0.001)
         else:
-            model = NeuralLDA(num_topics=25)
+            model = LDA(num_topics=35, passes=20)
 
         # search_space = {"num_layers": Categorical({1, 2, 3}), 
         #         "num_neurons": Categorical({100, 200, 300}),
@@ -157,18 +169,24 @@ def get_topic_shap(model, data, topics, word2idx):
 
 def load_models(config):
     dataset_name = config["dataset"]
-    if dataset_name == "sst2" or dataset_name == "cola":
+    if dataset_name != "emobank":
+        num_labels = 2
+        problem_type = "single_label_classification"
+        if dataset_name == "goemotions":
+            num_labels = 28
+            problem_type = "multi_label_classification"
+
         tokenizer1 = AutoTokenizer.from_pretrained(
-            "roberta-base")
+            "distilroberta-base")
         model1 = AutoModelForSequenceClassification.from_pretrained(
-            "roberta-base").cuda()
+            "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
         pred1 = transformers.TextClassificationPipeline(
             model=model1, tokenizer=tokenizer1, device=0, top_k=None)
 
         tokenizer2 = AutoTokenizer.from_pretrained(
             "gpt2")
         model2 = AutoModelForSequenceClassification.from_pretrained(
-            "gpt2").cuda()
+            "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
         tokenizer2.pad_token = tokenizer2.eos_token
         model2.config.pad_token_id = tokenizer2.pad_token_id
         pred2 = transformers.TextClassificationPipeline(
@@ -200,9 +218,10 @@ def load_data(config):
     dataset_name = config["dataset"]
     base_path = Path(__file__).parent
     if dataset_name == "sst2":
-        sst2_train = load_dataset("sst2", split="train")
-        sst2_val = load_dataset("sst2", split="validation")
-        return sst2_train, sst2_val
+        sst2_train = load_dataset("glue", "sst2", split="train")
+        sst2_val = load_dataset("glue", "sst2", split="validation")
+        sst2_test = load_dataset("glue", "sst2", split="test")
+        return sst2_train, sst2_val, sst2_test
     elif dataset_name == "cola":
         cola_train = load_dataset("glue", "cola", split="train")
         cola_val = load_dataset("glue", "cola", split="validation")
@@ -220,7 +239,23 @@ def load_data(config):
         goemotions_train = goemotions_train.rename_column("text", "sentence")
         goemotions_val = load_dataset("go_emotions", "simplified", split="validation")
         goemotions_val = goemotions_val.rename_column("text", "sentence")
-        return goemotions_train, goemotions_val
+        goemotions_test = load_dataset("go_emotions", "simplified", split="test")
+        goemotions_test = goemotions_test.rename_column("text", "sentence")
+        def to_tensor(x):
+            y = torch.zeros((28)).float()
+            y[x["labels"]] = 1.0
+            x["labels"] = y
+            return x
+        goemotions_train = goemotions_train.map(to_tensor)
+        goemotions_val = goemotions_val.map(to_tensor)
+        goemotions_test = goemotions_test.map(to_tensor)
+        new_features = goemotions_train.features.copy()
+        new_features["labels"] = Sequence(Value("float32"))
+        goemotions_train = goemotions_train.cast(new_features)
+        goemotions_val = goemotions_val.cast(new_features)
+        goemotions_test = goemotions_test.cast(new_features)
+        
+        return goemotions_train, goemotions_val, goemotions_test
     elif dataset_name == "blog":
         blog_train = load_dataset("blog_authorship_corpus", split="train")
         blog_train = blog_train.rename_column("text", "sentence")
@@ -241,6 +276,12 @@ def load_data(config):
         polite_train = Dataset.from_pandas(polite_train[["sentence", "labels"]])
         polite_test = Dataset.from_pandas(polite_test[["sentence", "labels"]])
         return polite_train, polite_test
+    elif dataset_name == "yelp":
+        yelp_train = load_dataset("yelp_review_full", split="train")
+        yelp_train = yelp_train.rename_column("text", "sentence").rename_column("label", "labels")
+        yelp_test = load_dataset("yelp_review_full", split="test")
+        yelp_test = yelp_test.rename_column("text", "sentence").rename_column("label", "labels")
+        return yelp_train, Dataset.from_list([]), yelp_test
     else:
         raise NotImplementedError
 
