@@ -23,15 +23,18 @@ from gensim.models import Phrases
 import pprint
 from sklearn.model_selection import train_test_split
 import string
-from octis.preprocessing.preprocessing import Preprocessing
-from octis.dataset.dataset import Dataset as octDataset
-from octis.models.LDA import LDA
-from octis.models.NeuralLDA import NeuralLDA
-from octis.models.ETM import ETM
-from octis.models.CTM import CTM
-from octis.optimization.optimizer import Optimizer
-from skopt.space.space import Real, Categorical, Integer
-from octis.evaluation_metrics.coherence_metrics import Coherence
+import sqlalchemy
+import random
+
+# from octis.preprocessing.preprocessing import Preprocessing
+# from octis.dataset.dataset import Dataset as octDataset
+# from octis.models.LDA import LDA
+# from octis.models.NeuralLDA import NeuralLDA
+# from octis.models.ETM import ETM
+# from octis.models.CTM import CTM
+# from octis.optimization.optimizer import Optimizer
+# from skopt.space.space import Real, Categorical, Integer
+# from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
 
 
@@ -240,3 +243,28 @@ def load_data(config):
         return polite_train, polite_test
     else:
         raise NotImplementedError
+
+def write_to_db(dataset_name, table_name, splits):
+    train= []
+    val = []
+    test = []
+    if("train" in splits):
+        data_train = load_dataset(dataset_name, split="train")  
+        train = [data_train[i]['text'] for i in tqdm(range(len(data_train)))]
+    if("val" in splits):
+        data_val = load_dataset(dataset_name, split="validation")
+        val = [data_val[i]['text'] for i in tqdm(range(len(data_val)))]
+    if("test" in splits):
+        data_test = load_dataset(dataset_name, split="test")
+        test = [data_test[i]['text'] for i in tqdm(range(len(data_test)))]
+
+    msgs = np.concatenate([train, test, val])
+
+    df = pd.DataFrame(columns=["message_id", "message"])
+    message_ids = range(len(msgs))
+    df["message"] = msgs
+    df["message_id"] = message_ids
+    
+    db = sqlalchemy.engine.url.URL(drivername='mysql', host='127.0.0.1', database='shreyah', query={'read_default_file': '~/.my.cnf', 'charset':'utf8mb4'})
+    engine = sqlalchemy.create_engine(db)
+    df.to_sql(table_name, con=engine, index=False, if_exists='replace', chunksize=50000)
