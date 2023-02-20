@@ -26,15 +26,15 @@ import string
 import sqlalchemy
 import random
 
-# from octis.preprocessing.preprocessing import Preprocessing
-# from octis.dataset.dataset import Dataset as octDataset
-# from octis.models.LDA import LDA
-# from octis.models.NeuralLDA import NeuralLDA
-# from octis.models.ETM import ETM
-# from octis.models.CTM import CTM
-# from octis.optimization.optimizer import Optimizer
-# from skopt.space.space import Real, Categorical, Integer
-# from octis.evaluation_metrics.coherence_metrics import Coherence
+from octis.preprocessing.preprocessing import Preprocessing
+from octis.dataset.dataset import Dataset as octDataset
+from octis.models.LDA import LDA
+from octis.models.NeuralLDA import NeuralLDA
+from octis.models.ETM import ETM
+from octis.models.CTM import CTM
+from octis.optimization.optimizer import Optimizer
+from skopt.space.space import Real, Categorical, Integer
+from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
 
 
