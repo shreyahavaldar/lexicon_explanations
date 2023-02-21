@@ -309,3 +309,46 @@ def write_to_db(dataset_name, table_name, splits):
     db = sqlalchemy.engine.url.URL(drivername='mysql', host='127.0.0.1', database='shreyah', query={'read_default_file': '~/.my.cnf', 'charset':'utf8mb4'})
     engine = sqlalchemy.create_engine(db)
     df.to_sql(table_name, con=engine, index=False, if_exists='replace', chunksize=50000)
+
+def process_mallet_topics(filepath, numtopics):
+    topics = {}
+    words = set(())
+    for i in range(numtopics):
+        topics[i] = {}
+
+    with open(filepath) as f:
+        lines = csv.reader(f, delimiter=',', quotechar='\"')
+        for parts in lines:
+            if(len(parts) == 6):
+                continue
+            topic_id = int(parts[0])
+            parts = parts[1:]
+            for i in range(len(parts)):      
+                if(i%2 == 0): #word
+                    try:
+                        word = parts[i]
+                        score = parts[i+1]
+                        words.add(word)
+                    except:
+                        print("error")
+                (topics[topic_id])[word] = score
+    
+    words = list(words)
+    word_scores = []        
+    for w in words:
+        scores = []
+        for t in topics:
+            try:
+                score = topics[t][w]
+            except(KeyError):
+                score = 0
+            scores.append(score)
+        word_scores.append(scores)
+    
+    lda_scores = pd.DataFrame(data=word_scores, index=words, columns=range(numtopics))
+    outfile = "data/processed_LDA_files/" + filepath.split("/")[1] + ".csv"
+    lda_scores.to_csv(outfile)
+
+    #ensure all columns add to 1
+    for i in range(numtopics):
+        print(np.sum(np.array(lda_scores[i].astype(float))))
