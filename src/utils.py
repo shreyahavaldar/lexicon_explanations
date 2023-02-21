@@ -86,13 +86,13 @@ def get_topics(config, data):
         
         if not os.path.isfile(base_path / "../data" / data_name):
             with open(base_path / ("../data/" + data_name), "w", newline="") as csvfile:
-                writer = csv.writer(csvfile, delimiter="\t")
+                writer = csv.writer(csvfile, delimiter="\t", escapechar="\\")
                 for line in data:
                     writer.writerow([line])
 
         if not os.path.exists(base_path / "../data" / (config["dataset"] + "_preprocessed")):
             preprocessor = Preprocessing(
-                num_processes=32,
+                num_processes=None,
                 vocabulary=None,
                 max_features=None,
                 remove_punctuation=True,
@@ -151,7 +151,7 @@ def get_liwc_topics():
 
 def get_topic_shap(model, data, topics, word2idx):
     explainer = shap.Explainer(model)
-    shap_values = explainer(data)
+    shap_values = explainer(data, fixed_context=1)
 
     word_vals = []
     topic_vals = []
@@ -258,7 +258,7 @@ def load_data(config):
         blog_train = blog_train.rename_column("text", "sentence")
         blog_val = load_dataset("blog_authorship_corpus", split="validation")
         blog_val = blog_val.rename_column("text", "sentence")
-        return blog_train, blog_val
+        return blog_train, Dataset.from_list([]), blog_val
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')
         emobank['labels'] = emobank[['V', 'A', 'D']].sum(axis=1) / 3
