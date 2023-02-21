@@ -23,15 +23,18 @@ from gensim.models import Phrases
 import pprint
 from sklearn.model_selection import train_test_split
 import string
-from octis.preprocessing.preprocessing import Preprocessing
-from octis.dataset.dataset import Dataset as octDataset
-from octis.models.LDA import LDA
-from octis.models.NeuralLDA import NeuralLDA
-from octis.models.ETM import ETM
-from octis.models.CTM import CTM
-from octis.optimization.optimizer import Optimizer
-from skopt.space.space import Real, Categorical, Integer
-from octis.evaluation_metrics.coherence_metrics import Coherence
+import sqlalchemy
+import random
+
+# from octis.preprocessing.preprocessing import Preprocessing
+# from octis.dataset.dataset import Dataset as octDataset
+# from octis.models.LDA import LDA
+# from octis.models.NeuralLDA import NeuralLDA
+# from octis.models.ETM import ETM
+# from octis.models.CTM import CTM
+# from octis.optimization.optimizer import Optimizer
+# from skopt.space.space import Real, Categorical, Integer
+# from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
 
 
@@ -80,7 +83,7 @@ def sort_shap(shap_values, feature_names):
 def get_topics(config, data):
     if config["topics"] == "liwc":
         return get_liwc_topics()
-    elif config["topics"] == "ctm" or config["topics"] == "neurallda" or config["topics"] == "lda":
+    elif config["topics"] == "ctm" or config["topics"] == "neurallda":
         base_path = Path(__file__).parent
         data_name = f"{config['dataset']}_raw.txt"
         
@@ -113,8 +116,6 @@ def get_topics(config, data):
             model = CTM(num_topics=10, num_epochs=35, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
         elif config["topics"] == "neurallda":
             model = NeuralLDA(num_topics=35, lr=0.001)
-        else:
-            model = LDA(num_topics=35, passes=20)
 
         # search_space = {"num_layers": Categorical({1, 2, 3}), 
         #         "num_neurons": Categorical({100, 200, 300}),
@@ -125,6 +126,14 @@ def get_topics(config, data):
         print(model_output)
         word2idx = {word: i for i, word in enumerate(dataset.get_vocabulary())}
         return model_output["topic-word-matrix"], word2idx
+    
+    elif config["topics"] == "lda":
+        topics_matrix_df = pd.read_csv("data/" + config["dataset"] + ".csv")
+        word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
+        topics_matrix_df.drop(columns=["words"], inplace=True)
+        topics_matrix_df = topics_matrix_df.T
+        return topics_matrix_df.to_numpy(), word2idx
+
     else:
         raise NotImplementedError
 
@@ -281,3 +290,80 @@ def load_data(config):
         return yelp_train, Dataset.from_list([]), yelp_test
     else:
         raise NotImplementedError
+
+def write_to_db(dataset_name, table_name, splits):
+    train= []
+    val = []
+    test = []
+    if("train" in splits):
+        data_train = load_dataset(dataset_name, split="train")  
+        train = [data_train[i]['text'] for i in tqdm(range(len(data_train)))]
+    if("val" in splits):
+        data_val = load_dataset(dataset_name, split="validation")
+        val = [data_val[i]['text'] for i in tqdm(range(len(data_val)))]
+    if("test" in splits):
+        data_test = load_dataset(dataset_name, split="test")
+        test = [data_test[i]['text'] for i in tqdm(range(len(data_test)))]
+
+    msgs = np.concatenate([train, test, val])
+
+    df = pd.DataFrame(columns=["message_id", "message"])
+    message_ids = range(len(msgs))
+    df["message"] = msgs
+    df["message_id"] = message_ids
+    
+    db = sqlalchemy.engine.url.URL(drivername='mysql', host='127.0.0.1', database='shreyah', query={'read_default_file': '~/.my.cnf', 'charset':'utf8mb4'})
+    engine = sqlalchemy.create_engine(db)
+    df.to_sql(table_name, con=engine, index=False, if_exists='replace', chunksize=50000)
+
+def process_mallet_topics(filepath, numtopics, dataset):
+    topics = {}
+    words = set(())
+    for i in range(numtopics):
+        topics[i] = {}
+
+    with open(filepath) as f:
+        lines = csv.reader(f, delimiter=',', quotechar='\"')
+        for parts in lines:
+            if(len(parts) == 6):
+                continue
+            topic_id = int(parts[0])
+            parts = parts[1:]
+            for i in range(len(parts)):      
+                if(i%2 == 0): #word
+                    try:
+                        word = parts[i]
+                        score = parts[i+1]
+                        words.add(word)
+                    except:
+                        print("error")
+                (topics[topic_id])[word] = score
+    
+    words = list(words)
+    word_scores = []        
+    for w in words:
+        scores = []
+        for t in topics:
+            try:
+                score = topics[t][w]
+            except(KeyError):
+                score = 0
+            scores.append(score)
+        word_scores.append(scores)
+    
+    lda_scores = pd.DataFrame(data=word_scores, columns=range(numtopics))
+    lda_scores["words"] = words
+    outfile = "data/processed_LDA_files/" + dataset + ".csv"
+    lda_scores.to_csv(outfile, index=False)
+
+    #ensure all columns add to 1
+    for i in range(numtopics):
+        print(np.sum(np.array(lda_scores[i].astype(float))))
+
+def process_lda():
+    process_mallet_topics("LDA/sst_lda_100_30/lda.wordGivenTopic.csv", 30, "sst")
+    process_mallet_topics("LDA/blog_lda_100_30/lda.wordGivenTopic.csv", 30, "blog")
+    process_mallet_topics("LDA/emotions_lda_100_30/lda.wordGivenTopic.csv", 30, "goemotions")
+    process_mallet_topics("LDA/polite_lda_100_30/lda.wordGivenTopic.csv", 30, "polite")
+    process_mallet_topics("LDA/yelp_lda_100_30/lda.wordGivenTopic.csv", 30, "yelp")
+
