@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "blog", "topics": "neurallda"}
+    config = {"dataset": "sst2", "topics": "neurallda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
@@ -36,18 +36,22 @@ def main():
     train(config, model1, data_train, data_val)
 
     # Only evaluate models on the test data
-    x = [data_test[i]['sentence'] for i in range(min(100, len(data_test)))]
-    topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx)
-    save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}")
-    save(word_vals, f"word_vals_distilroberta_{config['dataset']}")
+    x = [data_test[i]['sentence'] for i in range(min(100, len(data_val)))]
+    shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
+    shap_vals, topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx, shap_vals)
+    save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}_{config['topics']}")
+    save(word_vals, f"word_vals_distilroberta_{config['dataset']}_{config['topics']}")
+    save(shap_vals, f"shap_vals_distilroberta_{config['dataset']}")
     del model1.model
     del model1
     torch.cuda.empty_cache()
 
     train(config, model2, data_train, data_val)
-    topic_vals, word_vals = get_topic_shap(model2, x, topics, word2idx)
-    save(topic_vals, f"topic_vals_gpt2_{config['dataset']}")
-    save(word_vals, f"word_vals_gpt2_{config['dataset']}")
+    shap_vals = load(f"shap_vals_gpt2_{config['dataset']}")
+    shap_vals, topic_vals, word_vals = get_topic_shap(model2, x, topics, word2idx, shap_vals)
+    save(topic_vals, f"topic_vals_gpt2_{config['dataset']}_{config['topics']}")
+    save(word_vals, f"word_vals_gpt2_{config['dataset']}_{config['topics']}")
+    save(shap_vals, f"shap_vals_gpt2_{config['dataset']}")
 
 
 if __name__ == "__main__":

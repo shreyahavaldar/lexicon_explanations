@@ -2,7 +2,6 @@ import torch
 import os
 import torch
 import numpy as np
-import scipy as sp
 import shap
 import transformers
 from datasets import load_dataset, Dataset, Sequence, Value, Features
@@ -11,30 +10,19 @@ from src.pair_data import LIWCWordData
 from tqdm import tqdm
 import pandas as pd
 from pathlib import Path
-import gensim
-from gensim.corpora.dictionary import Dictionary
-from gensim.models import LdaModel, HdpModel
 import nltk
-nltk.download('stopwords')
-nltk.download('wordnet')
-from nltk.corpus import stopwords
-from nltk.stem.wordnet import WordNetLemmatizer
-from gensim.models import Phrases
-import pprint
 from sklearn.model_selection import train_test_split
 import string
-import sqlalchemy
-import random
 
-# from octis.preprocessing.preprocessing import Preprocessing
-# from octis.dataset.dataset import Dataset as octDataset
-# from octis.models.LDA import LDA
-# from octis.models.NeuralLDA import NeuralLDA
-# from octis.models.ETM import ETM
-# from octis.models.CTM import CTM
-# from octis.optimization.optimizer import Optimizer
-# from skopt.space.space import Real, Categorical, Integer
-# from octis.evaluation_metrics.coherence_metrics import Coherence
+from octis.preprocessing.preprocessing import Preprocessing
+from octis.dataset.dataset import Dataset as octDataset
+from octis.models.LDA import LDA
+from octis.models.NeuralLDA import NeuralLDA
+from octis.models.ETM import ETM
+from octis.models.CTM import CTM
+from octis.optimization.optimizer import Optimizer
+from skopt.space.space import Real, Categorical, Integer
+from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
 
 
@@ -68,12 +56,16 @@ def word_shap(token_strs, shap_values):
 
 
 def topic_shap(tokens, word2idx, topics, shap_values):
+    # Add an extra topic for words not in the topic model
     topic_values = np.zeros(topics.shape[0])
     topics_z = np.concatenate([topics, np.zeros((topics.shape[0], 1))], axis=1)
     for tok, val in zip(tokens, shap_values):
         topic_values += np.array([val * topics_z[i, word2idx.get(tok, -1)]
                                  for i in range(len(topics_z))])
-    return topic_values
+    no_topic = 0.0
+    for tok, val in zip(tokens, shap_values):
+        no_topic += val * (word2idx.get(tok, -1) == -1)
+    return np.concatenate([topic_values, np.array([no_topic])])
 
 
 def sort_shap(shap_values, feature_names):
@@ -125,14 +117,22 @@ def get_topics(config, data):
         model_output = model.train_model(dataset)
         print(model_output)
         word2idx = {word: i for i, word in enumerate(dataset.get_vocabulary())}
-        return model_output["topic-word-matrix"], word2idx
+        topics = model_output["topic-word-matrix"]
+        print(model_output["topics"][0][:5])
+        print([dataset.get_vocabulary()[i] for i in np.argsort(-topics[0, :])[:5]])
+        print([model.model.train_data.idx2token[i] for i in np.argsort(-topics[0, :])[:5]])
+        topics = topics / np.sum(topics, axis=0, keepdims=True)
+        return topics, word2idx
     
     elif config["topics"] == "lda":
-        topics_matrix_df = pd.read_csv("data/" + config["dataset"] + ".csv")
+        base_path = Path(__file__).parent
+        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"))
         word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
         topics_matrix_df.drop(columns=["words"], inplace=True)
         topics_matrix_df = topics_matrix_df.T
-        return topics_matrix_df.to_numpy(), word2idx
+        topics = topics_matrix_df.to_numpy()
+        topics = topics / np.sum(topics, axis=0, keepdims=True)
+        return topics, word2idx
 
     else:
         raise NotImplementedError
@@ -158,19 +158,20 @@ def get_liwc_topics():
     return topics, topic_names, word2idx
 
 
-def get_topic_shap(model, data, topics, word2idx):
-    explainer = shap.Explainer(model)
-    shap_values = explainer(data, fixed_context=1)
+def get_topic_shap(model, data, topics, word2idx, shap_values=None):
+    if shap_values == None:
+        explainer = shap.Explainer(model)
+        shap_values = explainer(data, fixed_context=1).values
 
     word_vals = []
     topic_vals = []
-    for i in tqdm(range(shap_values.values.shape[0])):
-        values, words = word_shap(shap_values.data[i], shap_values.values[i][:, -1])
+    for i in tqdm(range(shap_values.shape[0])):
+        values, words = word_shap(data[i], shap_values[i][:, -1])
         topic_values = topic_shap(words, word2idx, topics, values)
         topic_vals.append(topic_values)
         word_vals.append(values)
     topic_vals = np.stack(topic_vals, axis=0)
-    return topic_vals, word_vals
+    return shap_values, topic_vals, word_vals
 
 
 def load_models(config):
