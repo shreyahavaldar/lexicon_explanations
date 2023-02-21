@@ -13,6 +13,7 @@ from pathlib import Path
 import nltk
 from sklearn.model_selection import train_test_split
 import string
+from sklearn.preprocessing import MultiLabelBinarizer
 
 from octis.preprocessing.preprocessing import Preprocessing
 from octis.dataset.dataset import Dataset as octDataset
@@ -176,50 +177,37 @@ def get_topic_shap(model, data, topics, word2idx, shap_values=None):
 
 def load_models(config):
     dataset_name = config["dataset"]
-    if dataset_name != "emobank":
+    if dataset_name == "goemotions":
+        num_labels = 28
+        problem_type = "multi_label_classification"
+    elif dataset_name == "blog":
+        num_labels = 45
+        problem_type = "multi_label_classification"
+    elif dataset_name == "polite":
+        num_labels = 1
+        problem_type = "regression"
+    else:
         num_labels = 2
         problem_type = "single_label_classification"
-        if dataset_name == "goemotions":
-            num_labels = 28
-            problem_type = "multi_label_classification"
 
-        tokenizer1 = AutoTokenizer.from_pretrained(
-            "distilroberta-base")
-        model1 = AutoModelForSequenceClassification.from_pretrained(
-            "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
-        pred1 = transformers.TextClassificationPipeline(
-            model=model1, tokenizer=tokenizer1, device=0, top_k=None)
 
-        tokenizer2 = AutoTokenizer.from_pretrained(
-            "gpt2")
-        model2 = AutoModelForSequenceClassification.from_pretrained(
-            "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
-        tokenizer2.pad_token = tokenizer2.eos_token
-        model2.config.pad_token_id = tokenizer2.pad_token_id
-        pred2 = transformers.TextClassificationPipeline(
-            model=model2, tokenizer=tokenizer2, device=0, top_k=None)
+    tokenizer1 = AutoTokenizer.from_pretrained(
+        "distilroberta-base")
+    model1 = AutoModelForSequenceClassification.from_pretrained(
+        "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
+    pred1 = transformers.TextClassificationPipeline(
+        model=model1, tokenizer=tokenizer1, device=0, top_k=None)
 
-        return pred1, pred2
-    elif dataset_name == "emobank":
-        tokenizer1 = AutoTokenizer.from_pretrained(
-            "roberta-base")
-        model1 = AutoModelForSequenceClassification.from_pretrained(
-            "roberta-base", num_labels=1).cuda()
-        pred1 = transformers.TextClassificationPipeline(
-            model=model1, tokenizer=tokenizer1, device=0, top_k=None)
+    tokenizer2 = AutoTokenizer.from_pretrained(
+        "gpt2")
+    model2 = AutoModelForSequenceClassification.from_pretrained(
+        "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
+    tokenizer2.pad_token = tokenizer2.eos_token
+    model2.config.pad_token_id = tokenizer2.pad_token_id
+    pred2 = transformers.TextClassificationPipeline(
+        model=model2, tokenizer=tokenizer2, device=0, top_k=None)
 
-        tokenizer2 = AutoTokenizer.from_pretrained(
-            "gpt2")
-        model2 = AutoModelForSequenceClassification.from_pretrained(
-            "gpt2", num_labels=1).cuda()
-        tokenizer2.pad_token = tokenizer2.eos_token
-        model2.config.pad_token_id = tokenizer2.pad_token_id
-        pred2 = transformers.TextClassificationPipeline(
-            model=model2, tokenizer=tokenizer2, device=0, top_k=None)
-
-        return pred1, pred2
-    else:
-        raise NotImplementedError
+    return pred1, pred2
 
 def load_data(config):
     dataset_name = config["dataset"]
@@ -268,6 +256,25 @@ def load_data(config):
         blog_train = blog_train.rename_column("text", "sentence")
         blog_val = load_dataset("blog_authorship_corpus", split="validation")
         blog_val = blog_val.rename_column("text", "sentence")
+        def get_raw_labels(x):
+            age_group = "10s"
+            if x["age"] >= 33:
+                age_group = "30s"
+            elif x["age"] >= 23:
+                age_group = "20s"
+            x["raw_labels"] = [age_group, x["gender"], x["job"]]
+            return x
+
+        blog_train = blog_train.map(get_raw_labels)
+        blog_val = blog_val.map(get_raw_labels)
+        mlb = MultiLabelBinarizer()
+        train_labels = list(mlb.fit_transform([blog["raw_labels"] for blog in blog_train]).astype(float))
+        val_labels = list(mlb.transform([blog["raw_labels"] for blog in blog_val]).astype(float))
+
+        blog_train = blog_train.add_column("labels", train_labels)
+        blog_val = blog_val.add_column("labels", val_labels)
+
+        print(blog_train[0])
         return blog_train, Dataset.from_list([]), blog_val
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')
@@ -280,9 +287,11 @@ def load_data(config):
         polite = pd.read_csv(base_path / '../data/wikipedia.annotated.csv')
         polite = polite.rename({"Request": "sentence", "Normalized Score": "labels"}, axis=1)
         polite_train, polite_test = train_test_split(polite, test_size=0.2)
+        polite_val, polite_test = train_test_split(polite_test, test_size=0.5)
         polite_train = Dataset.from_pandas(polite_train[["sentence", "labels"]])
+        polite_val = Dataset.from_pandas(polite_val[["sentence", "labels"]])
         polite_test = Dataset.from_pandas(polite_test[["sentence", "labels"]])
-        return polite_train, polite_test
+        return polite_train, polite_val, polite_test
     elif dataset_name == "yelp":
         yelp_train = load_dataset("yelp_review_full", split="train")
         yelp_train = yelp_train.rename_column("text", "sentence").rename_column("label", "labels")
