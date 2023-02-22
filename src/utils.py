@@ -6,6 +6,8 @@ import shap
 import transformers
 from datasets import load_dataset, Dataset, Sequence, Value, Features
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers.models.roberta.tokenization_roberta_fast import RobertaTokenizerFast
+from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFast
 from src.pair_data import LIWCWordData
 from tqdm import tqdm
 import pandas as pd
@@ -25,6 +27,7 @@ from octis.optimization.optimizer import Optimizer
 from skopt.space.space import Real, Categorical, Integer
 from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
+import random
 
 
 def save(obj, name):
@@ -160,9 +163,10 @@ def get_liwc_topics():
 
 
 def get_topic_shap(model, data, topics, word2idx, shap_values=None):
-    if shap_values == None:
+    if shap_values is None:
+        print("First model output:", model(data[0]))
         explainer = shap.Explainer(model)
-        shap_values = explainer(data, fixed_context=1).values
+        shap_values = explainer(data).values
 
     word_vals = []
     topic_vals = []
@@ -193,6 +197,8 @@ def load_models(config):
 
     tokenizer1 = AutoTokenizer.from_pretrained(
         "distilroberta-base")
+    print(type(tokenizer1))
+    RobertaTokenizerFast.__call__ = lambda self, text, **kwargs: super(RobertaTokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model1 = AutoModelForSequenceClassification.from_pretrained(
         "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
     pred1 = transformers.TextClassificationPipeline(
@@ -200,6 +206,7 @@ def load_models(config):
 
     tokenizer2 = AutoTokenizer.from_pretrained(
         "gpt2")
+    GPT2TokenizerFast.__call__ = lambda self, text, **kwargs: super(GPT2TokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model2 = AutoModelForSequenceClassification.from_pretrained(
         "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
     tokenizer2.pad_token = tokenizer2.eos_token
@@ -273,9 +280,15 @@ def load_data(config):
 
         blog_train = blog_train.add_column("labels", train_labels)
         blog_val = blog_val.add_column("labels", val_labels)
+        indices = list(range(len(blog_val)))
+        random.seed(316)
+        random.shuffle(indices)
+        test_size = int(len(blog_val) // 2)
+        blog_test = blog_val.select(indices[:test_size])
+        blog_val = blog_val.select(indices[test_size:])
 
         print(blog_train[0])
-        return blog_train, Dataset.from_list([]), blog_val
+        return blog_train, blog_val, blog_test
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')
         emobank['labels'] = emobank[['V', 'A', 'D']].sum(axis=1) / 3

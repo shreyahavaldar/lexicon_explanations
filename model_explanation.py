@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "sst2", "topics": "neurallda"}
+    config = {"dataset": "blog", "topics": "lda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
@@ -25,9 +25,15 @@ def main():
         x += ([data_val[i]['sentence'] for i in range(len(data_val))]
         + [data_test[i]['sentence'] for i in range(len(data_test))])
 
-    random.seed(316)
-    random.shuffle(x)
-    x = [doc[:55000] for doc in x[:200000]]
+    indices = list(range(len(x)))
+    if config["dataset"] == "blog":
+        random.seed(316)
+        random.shuffle(indices)
+        x = [x[docid][:55000] for docid in indices[:200000]]
+        data_train = data_train.select(indices[:200000])
+    else:
+        x = [x[docid][:55000] for docid in indices]
+
     # x = [xi for xi in x if len(xi.split()) > 1]
 
     print("Num docs for topic model:", len(x))
@@ -36,7 +42,7 @@ def main():
     train(config, model1, data_train, data_val)
 
     # Only evaluate models on the test data
-    x = [data_test[i]['sentence'] for i in range(min(100, len(data_val)))]
+    x = [data_test[i]['sentence'] for i in range(min(100, len(data_test)))]
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}_{config['topics']}")

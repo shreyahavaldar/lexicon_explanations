@@ -18,14 +18,14 @@ def train(config, pipeline, train_data, val_data):
         pipeline.model = pipeline.model.from_pretrained(log_dir).cuda()
         return
 
-    training_args = TrainingArguments(output_dir=log_dir, evaluation_strategy="epoch")
+    training_args = TrainingArguments(output_dir=log_dir, evaluation_strategy="epoch", save_total_limit=1)
     if dataset_name == "emobank" or dataset_name == "polite":
         metric = evaluate.load("mse")
     else:
         metric = evaluate.load("accuracy")
 
     def tokenize_function(examples):
-        return pipeline.tokenizer(examples["sentence"], padding="max_length", truncation=True, max_length=256)
+        return pipeline.tokenizer(examples["sentence"]) #, padding="max_length", truncation=True, max_length=256)
 
     train_data_tokenized = train_data.map(tokenize_function, batched=True)
     val_data_tokenized = val_data.map(tokenize_function, batched=True)
