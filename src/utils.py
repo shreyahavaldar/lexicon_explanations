@@ -361,9 +361,11 @@ def process_mallet_topics(filepath, numtopics, dataset):
         print(np.sum(np.array(lda_scores[i].astype(float))))
 
 def process_lda():
-    process_mallet_topics("LDA/sst_lda_100_30/lda.wordGivenTopic.csv", 30, "sst")
-    process_mallet_topics("LDA/blog_lda_100_30/lda.wordGivenTopic.csv", 30, "blog")
-    process_mallet_topics("LDA/emotions_lda_100_30/lda.wordGivenTopic.csv", 30, "goemotions")
-    process_mallet_topics("LDA/polite_lda_100_30/lda.wordGivenTopic.csv", 30, "polite")
+    # process_mallet_topics("LDA/sst_lda_150_35/lda.wordGivenTopic.csv", 35, "sst2")
+    # process_mallet_topics("LDA/blog_lda_150_35/lda.wordGivenTopic.csv", 35, "blog2")
+    # process_mallet_topics("LDA/emotions_lda_150_35/lda.wordGivenTopic.csv", 35, "goemotions2")
+    # process_mallet_topics("LDA/polite_lda_150_35/lda.wordGivenTopic.csv", 35, "polite2")
+    # process_mallet_topics("LDA/yelp_lda_150_35/lda.wordGivenTopic.csv", 35, "yelp2")
     process_mallet_topics("LDA/yelp_lda_100_30/lda.wordGivenTopic.csv", 30, "yelp")
+
 
