@@ -2,40 +2,32 @@ import torch
 import os
 import torch
 import numpy as np
-import scipy as sp
 import shap
 import transformers
 from datasets import load_dataset, Dataset, Sequence, Value, Features
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
+from transformers.models.roberta.tokenization_roberta_fast import RobertaTokenizerFast
+from transformers.models.gpt2.tokenization_gpt2_fast import GPT2TokenizerFast
 from src.pair_data import LIWCWordData
 from tqdm import tqdm
 import pandas as pd
 from pathlib import Path
-import gensim
-from gensim.corpora.dictionary import Dictionary
-from gensim.models import LdaModel, HdpModel
 import nltk
-nltk.download('stopwords')
-nltk.download('wordnet')
-from nltk.corpus import stopwords
-from nltk.stem.wordnet import WordNetLemmatizer
-from gensim.models import Phrases
-import pprint
 from sklearn.model_selection import train_test_split
 import string
-import sqlalchemy
-import random
+from sklearn.preprocessing import MultiLabelBinarizer
 
-# from octis.preprocessing.preprocessing import Preprocessing
-# from octis.dataset.dataset import Dataset as octDataset
-# from octis.models.LDA import LDA
-# from octis.models.NeuralLDA import NeuralLDA
-# from octis.models.ETM import ETM
-# from octis.models.CTM import CTM
-# from octis.optimization.optimizer import Optimizer
-# from skopt.space.space import Real, Categorical, Integer
-# from octis.evaluation_metrics.coherence_metrics import Coherence
+from octis.preprocessing.preprocessing import Preprocessing
+from octis.dataset.dataset import Dataset as octDataset
+from octis.models.LDA import LDA
+from octis.models.NeuralLDA import NeuralLDA
+from octis.models.ETM import ETM
+from octis.models.CTM import CTM
+from octis.optimization.optimizer import Optimizer
+from skopt.space.space import Real, Categorical, Integer
+from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
+import random
 
 
 def save(obj, name):
@@ -68,12 +60,16 @@ def word_shap(token_strs, shap_values):
 
 
 def topic_shap(tokens, word2idx, topics, shap_values):
+    # Add an extra topic for words not in the topic model
     topic_values = np.zeros(topics.shape[0])
     topics_z = np.concatenate([topics, np.zeros((topics.shape[0], 1))], axis=1)
     for tok, val in zip(tokens, shap_values):
         topic_values += np.array([val * topics_z[i, word2idx.get(tok, -1)]
                                  for i in range(len(topics_z))])
-    return topic_values
+    no_topic = 0.0
+    for tok, val in zip(tokens, shap_values):
+        no_topic += val * (word2idx.get(tok, -1) == -1)
+    return np.concatenate([topic_values, np.array([no_topic])])
 
 
 def sort_shap(shap_values, feature_names):
@@ -89,13 +85,13 @@ def get_topics(config, data):
         
         if not os.path.isfile(base_path / "../data" / data_name):
             with open(base_path / ("../data/" + data_name), "w", newline="") as csvfile:
-                writer = csv.writer(csvfile, delimiter="\t")
+                writer = csv.writer(csvfile, delimiter="\t", escapechar="\\")
                 for line in data:
                     writer.writerow([line])
 
         if not os.path.exists(base_path / "../data" / (config["dataset"] + "_preprocessed")):
             preprocessor = Preprocessing(
-                num_processes=32,
+                num_processes=None,
                 vocabulary=None,
                 max_features=None,
                 remove_punctuation=True,
@@ -125,14 +121,22 @@ def get_topics(config, data):
         model_output = model.train_model(dataset)
         print(model_output)
         word2idx = {word: i for i, word in enumerate(dataset.get_vocabulary())}
-        return model_output["topic-word-matrix"], word2idx
+        topics = model_output["topic-word-matrix"]
+        print(model_output["topics"][0][:5])
+        print([dataset.get_vocabulary()[i] for i in np.argsort(-topics[0, :])[:5]])
+        print([model.model.train_data.idx2token[i] for i in np.argsort(-topics[0, :])[:5]])
+        topics = topics / np.sum(topics, axis=0, keepdims=True)
+        return topics, word2idx
     
     elif config["topics"] == "lda":
-        topics_matrix_df = pd.read_csv("data/" + config["dataset"] + ".csv")
+        base_path = Path(__file__).parent
+        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"))
         word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
         topics_matrix_df.drop(columns=["words"], inplace=True)
         topics_matrix_df = topics_matrix_df.T
-        return topics_matrix_df.to_numpy(), word2idx
+        topics = topics_matrix_df.to_numpy()
+        topics = topics / np.sum(topics, axis=0, keepdims=True)
+        return topics, word2idx
 
     else:
         raise NotImplementedError
@@ -158,67 +162,59 @@ def get_liwc_topics():
     return topics, topic_names, word2idx
 
 
-def get_topic_shap(model, data, topics, word2idx):
-    explainer = shap.Explainer(model)
-    shap_values = explainer(data)
+def get_topic_shap(model, data, topics, word2idx, shap_values=None):
+    if shap_values is None:
+        print("First model output:", model(data[0]))
+        explainer = shap.Explainer(model)
+        shap_values = explainer(data).values
 
     word_vals = []
     topic_vals = []
-    for i in tqdm(range(shap_values.values.shape[0])):
-        values, words = word_shap(shap_values.data[i], shap_values.values[i][:, -1])
+    for i in tqdm(range(shap_values.shape[0])):
+        values, words = word_shap(data[i], shap_values[i][:, -1])
         topic_values = topic_shap(words, word2idx, topics, values)
         topic_vals.append(topic_values)
         word_vals.append(values)
     topic_vals = np.stack(topic_vals, axis=0)
-    return topic_vals, word_vals
+    return shap_values, topic_vals, word_vals
 
 
 def load_models(config):
     dataset_name = config["dataset"]
-    if dataset_name != "emobank":
+    if dataset_name == "goemotions":
+        num_labels = 28
+        problem_type = "multi_label_classification"
+    elif dataset_name == "blog":
+        num_labels = 45
+        problem_type = "multi_label_classification"
+    elif dataset_name == "polite":
+        num_labels = 1
+        problem_type = "regression"
+    else:
         num_labels = 2
         problem_type = "single_label_classification"
-        if dataset_name == "goemotions":
-            num_labels = 28
-            problem_type = "multi_label_classification"
 
-        tokenizer1 = AutoTokenizer.from_pretrained(
-            "distilroberta-base")
-        model1 = AutoModelForSequenceClassification.from_pretrained(
-            "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
-        pred1 = transformers.TextClassificationPipeline(
-            model=model1, tokenizer=tokenizer1, device=0, top_k=None)
 
-        tokenizer2 = AutoTokenizer.from_pretrained(
-            "gpt2")
-        model2 = AutoModelForSequenceClassification.from_pretrained(
-            "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
-        tokenizer2.pad_token = tokenizer2.eos_token
-        model2.config.pad_token_id = tokenizer2.pad_token_id
-        pred2 = transformers.TextClassificationPipeline(
-            model=model2, tokenizer=tokenizer2, device=0, top_k=None)
+    tokenizer1 = AutoTokenizer.from_pretrained(
+        "distilroberta-base")
+    print(type(tokenizer1))
+    RobertaTokenizerFast.__call__ = lambda self, text, **kwargs: super(RobertaTokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
+    model1 = AutoModelForSequenceClassification.from_pretrained(
+        "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
+    pred1 = transformers.TextClassificationPipeline(
+        model=model1, tokenizer=tokenizer1, device=0, top_k=None)
 
-        return pred1, pred2
-    elif dataset_name == "emobank":
-        tokenizer1 = AutoTokenizer.from_pretrained(
-            "roberta-base")
-        model1 = AutoModelForSequenceClassification.from_pretrained(
-            "roberta-base", num_labels=1).cuda()
-        pred1 = transformers.TextClassificationPipeline(
-            model=model1, tokenizer=tokenizer1, device=0, top_k=None)
+    tokenizer2 = AutoTokenizer.from_pretrained(
+        "gpt2")
+    GPT2TokenizerFast.__call__ = lambda self, text, **kwargs: super(GPT2TokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
+    model2 = AutoModelForSequenceClassification.from_pretrained(
+        "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
+    tokenizer2.pad_token = tokenizer2.eos_token
+    model2.config.pad_token_id = tokenizer2.pad_token_id
+    pred2 = transformers.TextClassificationPipeline(
+        model=model2, tokenizer=tokenizer2, device=0, top_k=None)
 
-        tokenizer2 = AutoTokenizer.from_pretrained(
-            "gpt2")
-        model2 = AutoModelForSequenceClassification.from_pretrained(
-            "gpt2", num_labels=1).cuda()
-        tokenizer2.pad_token = tokenizer2.eos_token
-        model2.config.pad_token_id = tokenizer2.pad_token_id
-        pred2 = transformers.TextClassificationPipeline(
-            model=model2, tokenizer=tokenizer2, device=0, top_k=None)
-
-        return pred1, pred2
-    else:
-        raise NotImplementedError
+    return pred1, pred2
 
 def load_data(config):
     dataset_name = config["dataset"]
@@ -267,7 +263,32 @@ def load_data(config):
         blog_train = blog_train.rename_column("text", "sentence")
         blog_val = load_dataset("blog_authorship_corpus", split="validation")
         blog_val = blog_val.rename_column("text", "sentence")
-        return blog_train, blog_val
+        def get_raw_labels(x):
+            age_group = "10s"
+            if x["age"] >= 33:
+                age_group = "30s"
+            elif x["age"] >= 23:
+                age_group = "20s"
+            x["raw_labels"] = [age_group, x["gender"], x["job"]]
+            return x
+
+        blog_train = blog_train.map(get_raw_labels)
+        blog_val = blog_val.map(get_raw_labels)
+        mlb = MultiLabelBinarizer()
+        train_labels = list(mlb.fit_transform([blog["raw_labels"] for blog in blog_train]).astype(float))
+        val_labels = list(mlb.transform([blog["raw_labels"] for blog in blog_val]).astype(float))
+
+        blog_train = blog_train.add_column("labels", train_labels)
+        blog_val = blog_val.add_column("labels", val_labels)
+        indices = list(range(len(blog_val)))
+        random.seed(316)
+        random.shuffle(indices)
+        test_size = int(len(blog_val) // 2)
+        blog_test = blog_val.select(indices[:test_size])
+        blog_val = blog_val.select(indices[test_size:])
+
+        print(blog_train[0])
+        return blog_train, blog_val, blog_test
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')
         emobank['labels'] = emobank[['V', 'A', 'D']].sum(axis=1) / 3
@@ -279,9 +300,11 @@ def load_data(config):
         polite = pd.read_csv(base_path / '../data/wikipedia.annotated.csv')
         polite = polite.rename({"Request": "sentence", "Normalized Score": "labels"}, axis=1)
         polite_train, polite_test = train_test_split(polite, test_size=0.2)
+        polite_val, polite_test = train_test_split(polite_test, test_size=0.5)
         polite_train = Dataset.from_pandas(polite_train[["sentence", "labels"]])
+        polite_val = Dataset.from_pandas(polite_val[["sentence", "labels"]])
         polite_test = Dataset.from_pandas(polite_test[["sentence", "labels"]])
-        return polite_train, polite_test
+        return polite_train, polite_val, polite_test
     elif dataset_name == "yelp":
         yelp_train = load_dataset("yelp_review_full", split="train")
         yelp_train = yelp_train.rename_column("text", "sentence").rename_column("label", "labels")
