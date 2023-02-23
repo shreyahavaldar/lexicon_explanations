@@ -110,9 +110,9 @@ def get_topics(config, data):
         # npmi = Coherence(texts=dataset.get_corpus())
 
         if config["topics"] == "ctm":
-            model = CTM(num_topics=10, num_epochs=35, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
+            model = CTM(num_topics=30, num_epochs=35, inference_type='zeroshot', bert_model="bert-base-nli-mean-tokens")
         elif config["topics"] == "neurallda":
-            model = NeuralLDA(num_topics=35, lr=0.001)
+            model = NeuralLDA(num_topics=30, lr=0.0001)
 
         # search_space = {"num_layers": Categorical({1, 2, 3}), 
         #         "num_neurons": Categorical({100, 200, 300}),
@@ -164,7 +164,7 @@ def get_liwc_topics():
 
 
 def get_topic_shap(model, data, topics, word2idx, shap_values=None):
-    explainer = shap.Explainer(model, padding="max_length", truncation=True, max_length=256)
+    explainer = shap.Explainer(model, padding="max_length", truncation=True, max_length=512)
     if shap_values is None:
         # print("First model output:", model(data[0]))
         shap_values = explainer(data).values
@@ -187,11 +187,14 @@ def load_models(config):
         num_labels = 28
         problem_type = "multi_label_classification"
     elif dataset_name == "blog":
-        num_labels = 45
+        num_labels = 5
         problem_type = "multi_label_classification"
     elif dataset_name == "polite":
         num_labels = 1
         problem_type = "regression"
+    elif dataset_name == "yelp":
+        num_labels = 5
+        problem_type = "single_label_classification"
     else:
         num_labels = 2
         problem_type = "single_label_classification"
@@ -199,22 +202,19 @@ def load_models(config):
 
     tokenizer1 = AutoTokenizer.from_pretrained(
         "distilroberta-base")
-    print(type(tokenizer1))
-    # RobertaTokenizerFast.__call__ = lambda self, text, **kwargs: super(RobertaTokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model1 = AutoModelForSequenceClassification.from_pretrained(
         "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
     pred1 = transformers.TextClassificationPipeline(
-        model=model1, tokenizer=tokenizer1, device=0, top_k=None, padding="max_length", truncation=True, max_length=256)
+        model=model1, tokenizer=tokenizer1, device=0, top_k=None, padding="max_length", truncation=True, max_length=512)
 
     tokenizer2 = AutoTokenizer.from_pretrained(
         "gpt2")
-    # GPT2TokenizerFast.__call__ = lambda self, text, **kwargs: super(GPT2TokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model2 = AutoModelForSequenceClassification.from_pretrained(
         "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
     tokenizer2.pad_token = tokenizer2.eos_token
     model2.config.pad_token_id = tokenizer2.pad_token_id
     pred2 = transformers.TextClassificationPipeline(
-        model=model2, tokenizer=tokenizer2, device=0, top_k=None, padding="max_length", truncation=True, max_length=256)
+        model=model2, tokenizer=tokenizer2, device=0, top_k=None, padding="max_length", truncation=True, max_length=512)
 
     return pred1, pred2
 
@@ -265,13 +265,14 @@ def load_data(config):
         blog_train = blog_train.rename_column("text", "sentence")
         blog_val = load_dataset("blog_authorship_corpus", split="validation")
         blog_val = blog_val.rename_column("text", "sentence")
+
         def get_raw_labels(x):
             age_group = "10s"
             if x["age"] >= 33:
                 age_group = "30s"
             elif x["age"] >= 23:
                 age_group = "20s"
-            x["raw_labels"] = [age_group, x["gender"], x["job"]]
+            x["raw_labels"] = [age_group, x["gender"]]
             return x
 
         blog_train = blog_train.map(get_raw_labels)
@@ -289,7 +290,7 @@ def load_data(config):
         blog_test = blog_val.select(indices[:test_size])
         blog_val = blog_val.select(indices[test_size:])
 
-        print(blog_train[0])
+        # print(blog_train[0])
         return blog_train, blog_val, blog_test
     elif dataset_name == "emobank":
         emobank = pd.read_csv(base_path / '../data/emobank.csv')

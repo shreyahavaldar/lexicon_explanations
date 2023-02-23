@@ -3,7 +3,7 @@ import numpy as np
 import evaluate
 import os
 import torch
-from sklearn.metrics import f1_score, mean_squared_error
+from sklearn.metrics import f1_score, mean_squared_error, accuracy_score
 
 def train(config, pipeline, train_data, val_data):
     dataset_name = config["dataset"]
@@ -18,14 +18,22 @@ def train(config, pipeline, train_data, val_data):
         pipeline.model = pipeline.model.from_pretrained(log_dir).cuda()
         return
 
-    training_args = TrainingArguments(output_dir=log_dir, evaluation_strategy="epoch", save_total_limit=1)
+    training_args = TrainingArguments(
+        output_dir=log_dir,
+        evaluation_strategy="epoch",
+        num_train_epochs=3,
+        # per_device_train_batch_size=32,
+        # per_device_eval_batch_size=32,
+        # learning_rate=1e-5,
+        # weight_decay=5e-5,
+        save_total_limit=1)
     if dataset_name == "emobank" or dataset_name == "polite":
         metric = evaluate.load("mse")
     else:
         metric = evaluate.load("accuracy")
 
     def tokenize_function(examples):
-        return pipeline.tokenizer(examples["sentence"], padding="max_length", truncation=True, max_length=256)
+        return pipeline.tokenizer(examples["sentence"], padding="max_length", truncation=True, max_length=512)
 
     train_data_tokenized = train_data.map(tokenize_function, batched=True)
     val_data_tokenized = val_data.map(tokenize_function, batched=True)
@@ -35,7 +43,7 @@ def train(config, pipeline, train_data, val_data):
         logits, labels = eval_pred
         if dataset_name == "goemotions" or dataset_name == "blog":
             pred = torch.from_numpy(logits).sigmoid() > 0.5
-            return {"f1-average": f1_score(pred, labels, average='weighted')}
+            return {"f1-average": f1_score(labels, pred, average='weighted'), "accuracy": accuracy_score(labels, pred)}
         elif dataset_name != "emobank" and dataset_name != "polite":
             predictions = np.argmax(logits, axis=-1)
         else:
@@ -51,5 +59,6 @@ def train(config, pipeline, train_data, val_data):
         compute_metrics=compute_metrics,
     )
 
+    # print(trainer.evaluate())
     trainer.train(resume_from_checkpoint=resume)
     trainer.save_model()

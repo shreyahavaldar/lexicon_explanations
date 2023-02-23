@@ -14,19 +14,19 @@ import random
 
 
 def main():
-    config = {"dataset": "sst2", "topics": "lda"}
+    config = {"dataset": "blog", "topics": "lda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
     print(len(data_train), len(data_val), len(data_test))
 
     x = [data_train[i]['sentence'] for i in range(len(data_train))]
-    if config["dataset"] != "blog":
+    if config["dataset"] != "blog" and config["dataset"] != "yelp":
         x += ([data_val[i]['sentence'] for i in range(len(data_val))]
         + [data_test[i]['sentence'] for i in range(len(data_test))])
 
     indices = list(range(len(x)))
-    if config["dataset"] == "blog":
+    if config["dataset"] == "blog" or config["dataset"] == "yelp":
         random.seed(316)
         random.shuffle(indices)
         x = [x[docid][:55000] for docid in indices[:200000]]
