@@ -17,15 +17,15 @@ from sklearn.model_selection import train_test_split
 import string
 from sklearn.preprocessing import MultiLabelBinarizer
 
-from octis.preprocessing.preprocessing import Preprocessing
-from octis.dataset.dataset import Dataset as octDataset
-from octis.models.LDA import LDA
-from octis.models.NeuralLDA import NeuralLDA
-from octis.models.ETM import ETM
-from octis.models.CTM import CTM
-from octis.optimization.optimizer import Optimizer
-from skopt.space.space import Real, Categorical, Integer
-from octis.evaluation_metrics.coherence_metrics import Coherence
+# from octis.preprocessing.preprocessing import Preprocessing
+# from octis.dataset.dataset import Dataset as octDataset
+# from octis.models.LDA import LDA
+# from octis.models.NeuralLDA import NeuralLDA
+# from octis.models.ETM import ETM
+# from octis.models.CTM import CTM
+# from octis.optimization.optimizer import Optimizer
+# from skopt.space.space import Real, Categorical, Integer
+# from octis.evaluation_metrics.coherence_metrics import Coherence
 import csv
 import random
 
@@ -131,7 +131,7 @@ def get_topics(config, data):
     
     elif config["topics"] == "lda":
         base_path = Path(__file__).parent
-        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"))
+        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + "_50.csv"))
         word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
         topics_matrix_df.drop(columns=["words"], inplace=True)
         topics_matrix_df = topics_matrix_df.T
@@ -394,9 +394,6 @@ def process_mallet_topics(filepath, numtopics, dataset):
         print(np.sum(np.array(lda_scores[i].astype(float))))
 
 def process_lda():
-    process_mallet_topics("LDA/sst_lda_100_30/lda.wordGivenTopic.csv", 30, "sst")
-    process_mallet_topics("LDA/blog_lda_100_30/lda.wordGivenTopic.csv", 30, "blog")
-    process_mallet_topics("LDA/emotions_lda_100_30/lda.wordGivenTopic.csv", 30, "goemotions")
-    process_mallet_topics("LDA/polite_lda_100_30/lda.wordGivenTopic.csv", 30, "polite")
-    process_mallet_topics("LDA/yelp_lda_100_30/lda.wordGivenTopic.csv", 30, "yelp")
-
+    process_mallet_topics("LDA/yelp_lda_50_30/lda.wordGivenTopic.csv", 30, "yelp_50")
+    process_mallet_topics("LDA/blog_lda_50_30/lda.wordGivenTopic.csv", 30, "blog_50")
+    process_mallet_topics("LDA/emotions_lda_50_30/lda.wordGivenTopic.csv", 30, "goemotions_50")
