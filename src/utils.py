@@ -100,7 +100,8 @@ def get_topics(config, data):
                 stopword_list="english",
                 min_chars=1,
                 min_words_docs=0,
-                max_df=0.95)
+                max_df=0.95,
+            )
             dataset = preprocessor.preprocess_dataset(documents_path=(base_path / ("../data/" + data_name)))
             dataset.save("data/" + config["dataset"] + "_preprocessed")
 
@@ -163,15 +164,16 @@ def get_liwc_topics():
 
 
 def get_topic_shap(model, data, topics, word2idx, shap_values=None):
+    explainer = shap.Explainer(model, padding="max_length", truncation=True, max_length=256)
     if shap_values is None:
-        print("First model output:", model(data[0]))
-        explainer = shap.Explainer(model)
+        # print("First model output:", model(data[0]))
         shap_values = explainer(data).values
 
     word_vals = []
     topic_vals = []
     for i in tqdm(range(shap_values.shape[0])):
-        values, words = word_shap(data[i], shap_values[i][:, -1])
+        tok_sample = explainer.masker.data_transform(data[i])[0]
+        values, words = word_shap(tok_sample, shap_values[i][:, -1])
         topic_values = topic_shap(words, word2idx, topics, values)
         topic_vals.append(topic_values)
         word_vals.append(values)
@@ -198,21 +200,21 @@ def load_models(config):
     tokenizer1 = AutoTokenizer.from_pretrained(
         "distilroberta-base")
     print(type(tokenizer1))
-    RobertaTokenizerFast.__call__ = lambda self, text, **kwargs: super(RobertaTokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
+    # RobertaTokenizerFast.__call__ = lambda self, text, **kwargs: super(RobertaTokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model1 = AutoModelForSequenceClassification.from_pretrained(
         "distilroberta-base", num_labels=num_labels, problem_type=problem_type).cuda()
     pred1 = transformers.TextClassificationPipeline(
-        model=model1, tokenizer=tokenizer1, device=0, top_k=None)
+        model=model1, tokenizer=tokenizer1, device=0, top_k=None, padding="max_length", truncation=True, max_length=256)
 
     tokenizer2 = AutoTokenizer.from_pretrained(
         "gpt2")
-    GPT2TokenizerFast.__call__ = lambda self, text, **kwargs: super(GPT2TokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
+    # GPT2TokenizerFast.__call__ = lambda self, text, **kwargs: super(GPT2TokenizerFast, self).__call__(text, padding="max_length", truncation=True, max_length=256, **kwargs)
     model2 = AutoModelForSequenceClassification.from_pretrained(
         "gpt2", num_labels=num_labels, problem_type=problem_type).cuda()
     tokenizer2.pad_token = tokenizer2.eos_token
     model2.config.pad_token_id = tokenizer2.pad_token_id
     pred2 = transformers.TextClassificationPipeline(
-        model=model2, tokenizer=tokenizer2, device=0, top_k=None)
+        model=model2, tokenizer=tokenizer2, device=0, top_k=None, padding="max_length", truncation=True, max_length=256)
 
     return pred1, pred2
 
@@ -310,7 +312,14 @@ def load_data(config):
         yelp_train = yelp_train.rename_column("text", "sentence").rename_column("label", "labels")
         yelp_test = load_dataset("yelp_review_full", split="test")
         yelp_test = yelp_test.rename_column("text", "sentence").rename_column("label", "labels")
-        return yelp_train, Dataset.from_list([]), yelp_test
+
+        indices = list(range(len(yelp_test)))
+        random.seed(316)
+        random.shuffle(indices)
+        test_size = int(len(yelp_test) // 2)
+        yelp_val = yelp_test.select(indices[:test_size])
+        yelp_test = yelp_test.select(indices[test_size:])
+        return yelp_train, yelp_val, yelp_test
     else:
         raise NotImplementedError
 
