@@ -131,7 +131,7 @@ def get_topics(config, data):
     
     elif config["topics"] == "lda":
         base_path = Path(__file__).parent
-        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"))
+        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + "_50.csv"))
         word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
         topics_matrix_df.drop(columns=["words"], inplace=True)
         topics_matrix_df = topics_matrix_df.T
