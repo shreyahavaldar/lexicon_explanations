@@ -43,7 +43,7 @@ def train(config, pipeline, train_data, val_data):
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
-        if dataset_name == "goemotions" or dataset_name == "blog" or dataset_name == "yelp":
+        if dataset_name == "goemotions" or dataset_name == "blog":
             pred = torch.from_numpy(logits).sigmoid() > 0.5
             return {"f1-average": f1_score(labels, pred, average='weighted'), "accuracy": accuracy_score(labels, pred)}
         elif dataset_name != "emobank" and dataset_name != "polite":
@@ -53,7 +53,7 @@ def train(config, pipeline, train_data, val_data):
 
         return metric.compute(predictions=predictions, references=labels)
 
-    if dataset_name == "goemotions" or dataset_name == "blog" or dataset_name == "yelp":
+    if dataset_name == "goemotions" or dataset_name == "blog":
         y = torch.tensor([torch.tensor(row["labels"]) for row in train_data_tokenized])
         weights = (y == 0.) / torch.sum(y, dim=0)
         class CustomTrainer(Trainer):
