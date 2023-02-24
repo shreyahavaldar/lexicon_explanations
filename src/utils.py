@@ -42,26 +42,48 @@ def load(name):
         return None
 
 def word_shap(token_strs, shap_values):
-    vals = [0.0]
+    def normalize(word):
+        return word.strip().lower()
+
+    vals = [np.zeros(shap_values.shape[1])]
     toks = [""]
     for tok, val in zip(token_strs, shap_values):
+        # For GPT2 lexer, if the token starts with space, then this is the start
+        # of a new word
         if tok.startswith(" "):
-            toks[-1] = toks[-1].strip()
+            toks[-1] = normalize(toks[-1])
             toks.append("")
             vals.append(0.0)
 
+        # Punctuation should not be added to existing words
+        if tok in string.punctuation:
+            toks[-1] = normalize(toks[-1])
+            toks.append("")
+            vals.append(np.zeros(shap_values.shape[1]))
+
         toks[-1] = toks[-1] + tok
         vals[-1] = vals[-1] + val
+
+        # For Roberta lexer, if the token ends with space, then this is the end
+        # of an existing word
         if tok.endswith(" "):
-            toks[-1] = toks[-1].strip()
+            toks[-1] = normalize(toks[-1])
             toks.append("")
-            vals.append(0.0)
+            vals.append(np.zeros(shap_values.shape[1]))
+
+        # Punctuation is counted as the end of a word
+        if tok in string.punctuation:
+            toks[-1] = normalize(toks[-1])
+            toks.append("")
+            vals.append(np.zeros(shap_values.shape[1]))
     return vals, toks
 
 
 def topic_shap(tokens, word2idx, topics, shap_values):
     # Add an extra topic for words not in the topic model
-    topic_values = np.zeros(topics.shape[0])
+    # print(topics.shape)
+    # print(shap_values[0].shape)
+    topic_values = np.zeros((topics.shape[0], shap_values[0].shape[0]))
     topics_z = np.concatenate([topics, np.zeros((topics.shape[0], 1))], axis=1)
     for tok, val in zip(tokens, shap_values):
         topic_values += np.array([val * topics_z[i, word2idx.get(tok, -1)]
@@ -173,7 +195,7 @@ def get_topic_shap(model, data, topics, word2idx, shap_values=None):
     topic_vals = []
     for i in tqdm(range(shap_values.shape[0])):
         tok_sample = explainer.masker.data_transform(data[i])[0]
-        values, words = word_shap(tok_sample, shap_values[i][:, -1])
+        values, words = word_shap(tok_sample, shap_values[i])
         topic_values = topic_shap(words, word2idx, topics, values)
         topic_vals.append(topic_values)
         word_vals.append(values)
@@ -184,7 +206,7 @@ def get_topic_shap(model, data, topics, word2idx, shap_values=None):
 def load_models(config):
     dataset_name = config["dataset"]
     if dataset_name == "goemotions":
-        num_labels = 28
+        num_labels = 6
         problem_type = "multi_label_classification"
     elif dataset_name == "blog":
         num_labels = 5
@@ -246,8 +268,28 @@ def load_data(config):
         goemotions_test = load_dataset("go_emotions", "simplified", split="test")
         goemotions_test = goemotions_test.rename_column("text", "sentence")
         def to_tensor(x):
-            y = torch.zeros((28)).float()
-            y[x["labels"]] = 1.0
+            y = torch.zeros((6)).float()
+            anger = 2
+            surprise = 26
+            disgust = 11
+            enjoyment = 17
+            fear = 14
+            sadness = 25
+            for idx in x["labels"]:
+
+                if idx == anger:
+                    y[0] = 1.0
+                elif idx == surprise:
+                    y[1] = 1.0
+                elif idx == disgust:
+                    y[2] = 1.0
+                elif idx == enjoyment:
+                    y[3] = 1.0
+                elif idx == fear:
+                    y[4] = 1.0
+                elif idx == sadness:
+                    y[5] = 1.0
+
             x["labels"] = y
             return x
         goemotions_train = goemotions_train.map(to_tensor)

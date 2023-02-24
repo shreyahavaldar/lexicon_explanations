@@ -4,6 +4,8 @@ import evaluate
 import os
 import torch
 from sklearn.metrics import f1_score, mean_squared_error, accuracy_score
+from torch.nn import BCEWithLogitsLoss
+
 
 def train(config, pipeline, train_data, val_data):
     dataset_name = config["dataset"]
@@ -22,10 +24,10 @@ def train(config, pipeline, train_data, val_data):
         output_dir=log_dir,
         evaluation_strategy="epoch",
         num_train_epochs=3,
-        # per_device_train_batch_size=32,
-        # per_device_eval_batch_size=32,
-        # learning_rate=1e-5,
-        # weight_decay=5e-5,
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        learning_rate=1e-5,
+        weight_decay=5e-8,
         save_total_limit=1)
     if dataset_name == "emobank" or dataset_name == "polite":
         metric = evaluate.load("mse")
@@ -41,7 +43,7 @@ def train(config, pipeline, train_data, val_data):
 
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
-        if dataset_name == "goemotions" or dataset_name == "blog":
+        if dataset_name == "goemotions" or dataset_name == "blog" or dataset_name == "yelp":
             pred = torch.from_numpy(logits).sigmoid() > 0.5
             return {"f1-average": f1_score(labels, pred, average='weighted'), "accuracy": accuracy_score(labels, pred)}
         elif dataset_name != "emobank" and dataset_name != "polite":
@@ -51,13 +53,41 @@ def train(config, pipeline, train_data, val_data):
 
         return metric.compute(predictions=predictions, references=labels)
 
-    trainer = Trainer(
-        model=pipeline.model,
-        args=training_args,
-        train_dataset=train_data_tokenized,
-        eval_dataset=val_data_tokenized,
-        compute_metrics=compute_metrics,
-    )
+    if dataset_name == "goemotions" or dataset_name == "blog" or dataset_name == "yelp":
+        y = torch.tensor([torch.tensor(row["labels"]) for row in train_data_tokenized])
+        weights = (y == 0.) / torch.sum(y, dim=0)
+        class CustomTrainer(Trainer):
+            def compute_loss(self, model, inputs, return_outputs=False):
+                labels = inputs.get("labels")
+                # forward pass
+                outputs = model(**inputs)
+                logits = outputs.get('logits')
+                # compute custom loss
+                loss_fct = BCEWithLogitsLoss(weight=weights)
+                loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+                return (loss, outputs) if return_outputs else loss
+
+        trainer = CustomTrainer(
+            model=pipeline.model,
+            args=training_args,
+            train_dataset=train_data_tokenized,
+            eval_dataset=val_data_tokenized,
+            compute_metrics=compute_metrics,
+        )
+    else:
+        trainer = Trainer(
+            model=pipeline.model,
+            args=training_args,
+            train_dataset=train_data_tokenized,
+            eval_dataset=val_data_tokenized,
+            compute_metrics=compute_metrics,
+        )
+
+    # # Train only the classification layer
+    # for name, param in pipeline.model.named_parameters():
+    #     print(name)
+    #     if 'classifier' not in name: # classifier layer
+    #         param.requires_grad = False
 
     # print(trainer.evaluate())
     trainer.train(resume_from_checkpoint=resume)

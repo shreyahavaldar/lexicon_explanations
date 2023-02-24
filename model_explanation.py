@@ -42,7 +42,7 @@ def main():
     train(config, model1, data_train, data_val)
 
     # Only evaluate models on the test data
-    x = [data_test[i]['sentence'] for i in range(min(100, len(data_test)))]
+    x = [data_test[i]['sentence'] for i in range(min(10, len(data_test)))]
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}_{config['topics']}")
