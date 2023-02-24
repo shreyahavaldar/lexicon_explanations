@@ -39,7 +39,7 @@ def main():
     print("Num docs for topic model:", len(x))
     topics, word2idx = get_topics(config, x)
 
-    train(config, model1, data_train, data_val, batch_size=16)
+    train(config, model1, data_train, data_val, batch_size=32, lr=5e-5)
 
     # Only evaluate models on the test data
     x = [data_test[i]['sentence'] for i in range(min(10, len(data_test)))]
@@ -52,7 +52,7 @@ def main():
     del model1
     torch.cuda.empty_cache()
 
-    train(config, model2, data_train, data_val, batch_size=8)
+    train(config, model2, data_train, data_val, batch_size=8, lr=5e-6)
     shap_vals = load(f"shap_vals_gpt2_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model2, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_gpt2_{config['dataset']}_{config['topics']}")
