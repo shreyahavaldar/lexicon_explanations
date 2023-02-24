@@ -3,11 +3,11 @@ import numpy as np
 import evaluate
 import os
 import torch
-from sklearn.metrics import f1_score, mean_squared_error, accuracy_score
+from sklearn.metrics import f1_score, mean_squared_error, accuracy_score, balanced_accuracy_score
 from torch.nn import BCEWithLogitsLoss
 
 
-def train(config, pipeline, train_data, val_data):
+def train(config, pipeline, train_data, val_data, batch_size=8, lr=1e-5):
     dataset_name = config["dataset"]
     model_name = pipeline.model.__class__.__name__
     print(model_name)
@@ -18,15 +18,15 @@ def train(config, pipeline, train_data, val_data):
 
     if os.path.exists(log_dir + "/pytorch_model.bin"):
         pipeline.model = pipeline.model.from_pretrained(log_dir).cuda()
-        return
+        # return
 
     training_args = TrainingArguments(
         output_dir=log_dir,
         evaluation_strategy="epoch",
         num_train_epochs=3,
-        per_device_train_batch_size=16,
+        per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=16,
-        learning_rate=1e-5,
+        learning_rate=lr,
         weight_decay=5e-8,
         save_total_limit=1)
     if dataset_name == "emobank" or dataset_name == "polite":
@@ -45,7 +45,7 @@ def train(config, pipeline, train_data, val_data):
         logits, labels = eval_pred
         if dataset_name == "goemotions" or dataset_name == "blog":
             pred = torch.from_numpy(logits).sigmoid() > 0.5
-            return {"f1-average": f1_score(labels, pred, average='weighted'), "accuracy": accuracy_score(labels, pred)}
+            return {"f1-average": f1_score(labels, pred, average='weighted'), "micro-accuracy": accuracy_score(labels, pred), "macro-accuracy": balanced_accuracy_score(labels, pred)}
         elif dataset_name != "emobank" and dataset_name != "polite":
             predictions = np.argmax(logits, axis=-1)
         else:
@@ -54,7 +54,8 @@ def train(config, pipeline, train_data, val_data):
         return metric.compute(predictions=predictions, references=labels)
 
     if dataset_name == "goemotions" or dataset_name == "blog":
-        y = torch.tensor([torch.tensor(row["labels"]) for row in train_data_tokenized])
+        y = torch.stack([torch.from_numpy(row["labels"]) for row in train_data_tokenized])
+        print("All label shape:", y.shape)
         weights = (y == 0.) / torch.sum(y, dim=0)
         class CustomTrainer(Trainer):
             def compute_loss(self, model, inputs, return_outputs=False):
@@ -89,6 +90,8 @@ def train(config, pipeline, train_data, val_data):
     #     if 'classifier' not in name: # classifier layer
     #         param.requires_grad = False
 
-    # print(trainer.evaluate())
-    trainer.train(resume_from_checkpoint=resume)
-    trainer.save_model()
+    if os.path.exists(log_dir + "/pytorch_model.bin"):
+        print(trainer.evaluate())
+    else:
+        trainer.train(resume_from_checkpoint=resume)
+        trainer.save_model()
