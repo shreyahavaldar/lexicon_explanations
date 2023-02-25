@@ -104,7 +104,8 @@ def train(config, pipeline, train_data, val_data, data_test, batch_size=8, lr=1e
     #         param.requires_grad = False
 
     if os.path.exists(log_dir + "/pytorch_model.bin"):
-        print(trainer.predict(data_test))
+        test_data_tokenized = test_data.map(tokenize_function, batched=True)
+        print(trainer.predict(test_data_tokenized))
     else:
         trainer.train(resume_from_checkpoint=resume)
         trainer.save_model()
