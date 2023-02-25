@@ -56,8 +56,7 @@ def preprocess_LIWC():
             term_expansion = dictionary[term]
             term_expansion.sort(key=lambda x: len(x))
             # EVENTUALLY: sort by frequency
-            for t in term_expansion[:2]:
-                print(t)
+            for t in term_expansion:
                 processed_terms.append(t)
                 processed_categories.append(category)
         else:
@@ -69,7 +68,7 @@ def preprocess_LIWC():
 
     processed_LIWC["term"] = processed_terms
     processed_LIWC["category"] = processed_categories
-    processed_LIWC.to_csv("LIWC2015_processed.csv")
+    processed_LIWC.to_csv("LIWC2015_processed_full.csv")
 
 
 preprocess_LIWC()
