@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "goemotions", "topics": "lda"}
+    config = {"dataset": "blog", "topics": "lda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
