@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "blog", "topics": "lda"}
+    config = {"dataset": "goemotions", "topics": "lda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
@@ -42,7 +42,12 @@ def main():
     train(config, model1, data_train, data_val, batch_size=16, lr=5e-5)
 
     # Only evaluate models on the test data
-    x = [data_test[i]['sentence'] for i in range(min(10, len(data_test)))]
+    indices = list(range(len(data_val)))
+    random.seed(316)
+    random.shuffle(indices)
+    data_val = data_val.select(indices[:1000])
+    x = [data_val[i]['sentence'] for i in range(len(data_val))]
+
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}_{config['topics']}")
