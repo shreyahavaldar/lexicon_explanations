@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "goemotions", "topics": "lda"}
+    config = {"dataset": "blog", "topics": "lda"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
@@ -39,18 +39,18 @@ def main():
     print("Num docs for topic model:", len(x))
     topics, word2idx = get_topics(config, x)
 
-    train(config, model1, data_train, data_val, batch_size=16, lr=5e-5)
+    train(config, model1, data_train, data_val, data_test, batch_size=16, lr=5e-5)
 
-    # Only evaluate models on the val data with more than 1 token
+    # Only evaluate models on the test data with more than 1 token
     def tokenize_function(examples):
         return len(model2.tokenizer.tokenize(examples["sentence"], padding="max_length", truncation=True, max_length=512)) > 1
-    data_val.filter(tokenize_function)
+    data_test_shap = data_test.filter(tokenize_function)
 
-    indices = list(range(len(data_val)))
+    indices = list(range(len(data_test_shap)))
     random.seed(316)
     random.shuffle(indices)
-    data_val = data_val.select(indices[:100])
-    x = [data_val[i]['sentence'] for i in range(len(data_val))]
+    data_test_shap = data_test_shap.select(indices[:100])
+    x = [data_test_shap[i]['sentence'] for i in range(len(data_test_shap))]
 
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model1, x, topics, word2idx, shap_vals)
@@ -61,7 +61,7 @@ def main():
     del model1
     torch.cuda.empty_cache()
 
-    train(config, model2, data_train, data_val, batch_size=8, lr=5e-5)
+    train(config, model2, data_train, data_val, data_test, batch_size=8, lr=5e-5)
     shap_vals = load(f"shap_vals_gpt2_{config['dataset']}")
     shap_vals, topic_vals, word_vals = get_topic_shap(model2, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_gpt2_{config['dataset']}_{config['topics']}")

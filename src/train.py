@@ -8,7 +8,7 @@ from torch.nn import BCEWithLogitsLoss
 import glob
 
 
-def train(config, pipeline, train_data, val_data, batch_size=8, lr=1e-5):
+def train(config, pipeline, train_data, val_data, data_test, batch_size=8, lr=1e-5):
     dataset_name = config["dataset"]
     model_name = pipeline.model.__class__.__name__
     print(model_name)
@@ -60,7 +60,7 @@ def train(config, pipeline, train_data, val_data, batch_size=8, lr=1e-5):
             labels_binary = labels > 1
             return {"f1": f1_score(labels, predictions, average='weighted'),
                     "accuracy": accuracy_score(labels, predictions),
-                    "polarity-f1": accuracy_score(labels_binary, pred_binary),
+                    "polarity-f1": f1_score(labels_binary, pred_binary),
                     "polarity-accuracy": accuracy_score(labels_binary, pred_binary)}
         else:
             return metric.compute(predictions=predictions, references=labels)
@@ -104,7 +104,7 @@ def train(config, pipeline, train_data, val_data, batch_size=8, lr=1e-5):
     #         param.requires_grad = False
 
     if os.path.exists(log_dir + "/pytorch_model.bin"):
-        print(trainer.evaluate())
+        print(trainer.predict(data_test))
     else:
         trainer.train(resume_from_checkpoint=resume)
         trainer.save_model()
