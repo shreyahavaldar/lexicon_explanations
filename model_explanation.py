@@ -41,7 +41,11 @@ def main():
 
     train(config, model1, data_train, data_val, batch_size=16, lr=5e-5)
 
-    # Only evaluate models on the test data
+    # Only evaluate models on the val data with more than 1 token
+    def tokenize_function(examples):
+        return len(model2.tokenizer.tokenize(examples["sentence"], padding="max_length", truncation=True, max_length=512)) > 1
+    data_val.filter(tokenize_function)
+
     indices = list(range(len(data_val)))
     random.seed(316)
     random.shuffle(indices)
