@@ -60,6 +60,7 @@ def train(config, pipeline, train_data, val_data, batch_size=8, lr=1e-5):
             labels_binary = labels > 1
             return {"f1": f1_score(labels, predictions, average='weighted'),
                     "accuracy": accuracy_score(labels, predictions),
+                    "polarity-f1": accuracy_score(labels_binary, pred_binary),
                     "polarity-accuracy": accuracy_score(labels_binary, pred_binary)}
         else:
             return metric.compute(predictions=predictions, references=labels)

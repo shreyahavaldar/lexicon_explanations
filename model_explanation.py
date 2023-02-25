@@ -49,7 +49,7 @@ def main():
     indices = list(range(len(data_val)))
     random.seed(316)
     random.shuffle(indices)
-    data_val = data_val.select(indices[:1000])
+    data_val = data_val.select(indices[:100])
     x = [data_val[i]['sentence'] for i in range(len(data_val))]
 
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
