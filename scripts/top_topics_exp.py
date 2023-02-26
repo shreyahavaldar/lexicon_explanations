@@ -43,15 +43,32 @@ def load_shap_vals(dataset_name: str, topic_type: str, feature: int):
 
     assert roberta_topic_vals is not None
     assert gpt2_topic_vals is not None
-    roberta_topic_vals = roberta_topic_vals[:, :, feature]
-    gpt2_topic_vals = gpt2_topic_vals[:, :, feature]
+    print(roberta_topic_vals.shape)
+    print(gpt2_topic_vals.shape)
+    # roberta_topic_vals = roberta_topic_vals[:, :, feature]
+    # gpt2_topic_vals = gpt2_topic_vals[:, :, feature]
+    roberta_topic_vals = roberta_topic_vals[:, feature]
+    gpt2_topic_vals = gpt2_topic_vals[:, feature]
 
     return shap_vals, roberta_topic_vals, gpt2_topic_vals
 
 def print_global_exp(roberta_topic_vals, gpt2_topic_vals, topic_names):
-    roberta_feat_imp = np.sum(np.abs(roberta_topic_vals), axis=0)
-    gpt2_feat_imp = np.sum(np.abs(gpt2_topic_vals), axis=0)
+    # roberta_feat_imp = np.sum(np.abs(roberta_topic_vals), axis=0)
+    # gpt2_feat_imp = np.sum(np.abs(gpt2_topic_vals), axis=0)
+    roberta_feat_imp = roberta_topic_vals / np.linalg.norm(roberta_topic_vals)
+    gpt2_feat_imp = gpt2_topic_vals / np.linalg.norm(gpt2_topic_vals)
 
+    # diff = roberta_feat_imp - (gpt2_feat_imp * np.dot(roberta_feat_imp, gpt2_feat_imp))
+    diff = roberta_feat_imp - gpt2_feat_imp
+    diff_abs = np.abs(diff)
+    # diff = np.abs(roberta_feat_imp - gpt2_feat_imp)
+    sort_idx = np.argsort(diff_abs)
+    # topic_values, sorted_names = sort_shap(diff_abs, topic_names)
+    print("Most diff explanation:")
+    for i in range(-1, -6, -1):
+        print(f"{topic_names[sort_idx[i]]}: {diff[sort_idx[i]]}")
+
+    print()
     topic_values, sorted_names = sort_shap(roberta_feat_imp, topic_names)
     print("Roberta explanation:")
     for i in range(-1, -6, -1):
@@ -112,10 +129,10 @@ def get_topic_names(dataset, topic_type):
         elif dataset == "blog":
             names = []
             stopword_topics = load("stopword_topic_names_blog_lda")
-            for i in range(830):
+            for i in range(1726):
                 if i in stopword_topics:
                     names.append(stopword_topics[i])
-                elif i == 829:
+                elif i == 1725:
                     names.append("punctuation")
                 else:
                     names.append(f"topic_{i}")
@@ -123,7 +140,7 @@ def get_topic_names(dataset, topic_type):
     
         
 def main(dataset_name):
-    topic_types = ["liwc", "lda"]
+    topic_types = ["liwc"]
     # x = get_shap_examples(dataset_name)
 
     for topic_type in topic_types:

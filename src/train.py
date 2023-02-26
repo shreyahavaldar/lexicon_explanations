@@ -19,7 +19,7 @@ def train(config, pipeline, train_data, val_data, data_test, batch_size=8, lr=1e
 
     if os.path.exists(log_dir + "/pytorch_model.bin"):
         pipeline.model = pipeline.model.from_pretrained(log_dir).cuda()
-        # return
+        return
 
     training_args = TrainingArguments(
         output_dir=log_dir,

@@ -155,12 +155,14 @@ def get_topics(config, data):
     
     elif config["topics"] == "lda":
         base_path = Path(__file__).parent
-        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"))
+        topics_matrix_df = pd.read_csv(base_path / ("../data/processed_LDA_files/" + config["dataset"] + ".csv"), dtype={"words": str}, keep_default_na=False)
+        topics_matrix_df["words"] = topics_matrix_df["words"].astype(str)
         word2idx = dict(zip(topics_matrix_df["words"], range(len(topics_matrix_df["words"]))))
         topics_matrix_df.drop(columns=["words"], inplace=True)
         topics_matrix_df = topics_matrix_df.T
-        topics = topics_matrix_df.to_numpy()
+        topics = topics_matrix_df.to_numpy().astype(np.float64)
         topics = topics / np.sum(topics, axis=0, keepdims=True)
+        assert (topics.shape[1] == len(word2idx))
         return topics, word2idx
 
     else:
@@ -188,8 +190,9 @@ def get_liwc_topics():
     return topics, word2idx
 
 
-def get_topic_shap(model, data, topics, word2idx, shap_values=None):
+def get_topic_shap(model, alt_model, data, topics, word2idx, shap_values=None):
     explainer = shap.Explainer(model, padding="max_length", truncation=True, max_length=512)
+    explainer_other = shap.Explainer(alt_model, padding="max_length", truncation=True, max_length=512)
     if shap_values is None:
         # print("First model output:", model(data[0]))
         shap_values = explainer(data).values
@@ -197,10 +200,13 @@ def get_topic_shap(model, data, topics, word2idx, shap_values=None):
     # Finding all the stop words to turn into topics
     stop_words = set()
     punctuation = set()
-    for i in tqdm(range(shap_values.shape[0])):
+    for i in tqdm(range(len(data))):
         tok_sample = explainer.masker.data_transform(data[i])[0]
-        values, words = word_shap(tok_sample, shap_values[i])
-        for word in words:
+        values, words = word_shap(tok_sample, np.zeros((len(tok_sample), 1)))
+
+        tok_sample_other = explainer_other.masker.data_transform(data[i])[0]
+        _, words_other = word_shap(tok_sample_other, np.zeros((len(tok_sample_other), 1)))
+        for word in (words + words_other):
             if word != "" and word not in word2idx:
                 if any(char in set(string.punctuation) for char in word):
                     punctuation.add(word)
@@ -213,37 +219,61 @@ def get_topic_shap(model, data, topics, word2idx, shap_values=None):
     print(len(stop_words))
 
     # Update the word2idx and topics
+    assert (np.allclose(np.sum(topics, axis=0), np.ones(topics.shape[1])))
     if len(stop_words) + len(punctuation) > 0:
         last_topic_idx = len(topics)
-        topics = np.concatenate([topics, np.zeros((topics.shape[0], len(stop_words) + len(punctuation)))], axis=1)
+        topics = np.concatenate([topics, np.zeros((topics.shape[0], len(stop_words) + 1))], axis=1)
         topics = np.concatenate([topics, np.zeros((len(stop_words) + 1, topics.shape[1]))], axis=0)
         last_word_idx = len(word2idx)
-        new_words = {stop_word: (last_word_idx + i) for i, stop_word in enumerate(sorted(stop_words + punctuation))}
+        new_words = {stop_word: (last_word_idx + i) for i, stop_word in enumerate(stop_words)}
         word2idx.update(new_words)
+        punctuation_idx = len(word2idx)
+        new_punctuation = {symbol: punctuation_idx for i, symbol in enumerate(punctuation)}
+        word2idx.update(new_punctuation)
         for i, word in enumerate(stop_words):
-            topics[last_topic_idx + i, word2idx.get(word)] = 1
-        for i, word in enumerate(punctuation):
-            topics[len(topics) - 1, word2idx.get(word)] = 1
+            topics[last_topic_idx + i, word2idx[word]] = 1
+        topics[len(topics) - 1, -1] = 1
 
     idx2stop_word_topic = {last_topic_idx + i: word for i, word in enumerate(stop_words)}
 
     print("Topics shape:", topics.shape)
 
-    word_vals = []
-    topic_vals = []
     stop_words = set()
+    word_shap_v = np.zeros((topics.shape[1], shap_values[0].shape[1]))
+    print("word shap shape:", word_shap_v.shape)
+    word_shap_cnt = np.ones(topics.shape[1])
     for i in tqdm(range(shap_values.shape[0])):
         tok_sample = explainer.masker.data_transform(data[i])[0]
+        assert (len(tok_sample) == len(shap_values[i]))
         values, words = word_shap(tok_sample, shap_values[i])
-        for word in words:
-            if word != "" and word not in word2idx:
-                stop_words.add(word)
-        topic_values = topic_shap(words, word2idx, topics, values)
-        topic_vals.append(topic_values)
-        word_vals.append(values)
-    topic_vals = np.stack(topic_vals, axis=0)
+        for word, val in zip(words, values):
+            word_shap_v[word2idx.get(word, -1), :] += np.abs(val)
+            word_shap_cnt[word2idx.get(word, -1)] += 1
+    word_shap_v = word_shap_v / word_shap_cnt[:, np.newaxis]
+
+    topic_values = topics.astype(np.float64) @ word_shap_v.astype(np.float64)
+    print(np.sum(topics, axis=0))
+    assert (np.allclose(np.sum(topics, axis=0), np.ones(topics.shape[1])))
+    print(np.sum(word_shap_v, axis=0), np.sum(topic_values, axis=0))
+    assert (np.allclose(np.sum(word_shap_v, axis=0), np.sum(topic_values, axis=0)))
+    # topic_values = np.zeros((topics.shape[0], shap_values[0].shape[1]))
+    # for word, i in tqdm(word2idx.items()):
+    #     idx = word2idx.get(word, -1)
+    #     topic_values += np.array([word_shap_v[idx] * topics[j, idx]
+    #                              for j in range(topics.shape[0])])
+
+    # for i in tqdm(range(shap_values.shape[0])):
+    #     tok_sample = explainer.masker.data_transform(data[i])[0]
+    #     values, words = word_shap(tok_sample, shap_values[i])
+    #     for word in words:
+    #         if word != "" and word not in word2idx:
+    #             stop_words.add(word)
+    #     topic_values = topic_shap(words, word2idx, topics, values)
+    #     topic_vals.append(topic_values)
+    #     word_vals.append(values)
+    # topic_vals = np.stack(topic_vals, axis=0)
     assert(len(stop_words) == 0)
-    return shap_values, topic_vals, word_vals, topics, idx2stop_word_topic
+    return shap_values, topic_values, word_shap_v, topics, idx2stop_word_topic
 
 
 def load_models(config):

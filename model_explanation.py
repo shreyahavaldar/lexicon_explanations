@@ -14,7 +14,7 @@ import random
 
 
 def main():
-    config = {"dataset": "yelp", "topics": "liwc"}
+    config = {"dataset": "goemotions", "topics": "liwc"}
     model1, model2 = load_models(config)
 
     data_train, data_val, data_test = load_data(config)
@@ -47,10 +47,10 @@ def main():
 
     #  Filter then select only for blog
     if config["dataset"] == "blog":
-        random.seed(316)
-        random.shuffle(indices)
         data_test_shap = data_test.filter(tokenize_function)
         indices = list(range(len(data_test_shap)))
+        random.seed(316)
+        random.shuffle(indices)
         data_test_shap = data_test_shap.select(indices[:1000])
     else:
         indices = list(range(len(data_test)))
@@ -62,18 +62,18 @@ def main():
     x = [data_test_shap[i]['sentence'] for i in range(len(data_test_shap))]
 
     shap_vals = load(f"shap_vals_distilroberta_{config['dataset']}")
-    shap_vals, topic_vals, word_vals, topics, idx2stop_word_topic = get_topic_shap(model1, x, topics, word2idx, shap_vals)
+    shap_vals, topic_vals, word_vals, topics, idx2stop_word_topic = get_topic_shap(model1, model2, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_distilroberta_{config['dataset']}_{config['topics']}")
     save(word_vals, f"word_vals_distilroberta_{config['dataset']}_{config['topics']}")
     save(shap_vals, f"shap_vals_distilroberta_{config['dataset']}")
     save(idx2stop_word_topic, f"stopword_topic_names_{config['dataset']}_{config['topics']}")
-    del model1.model
-    del model1
-    torch.cuda.empty_cache()
+    # del model1.model
+    # del model1
+    # torch.cuda.empty_cache()
 
     train(config, model2, data_train, data_val, data_test, batch_size=8, lr=5e-5)
     shap_vals = load(f"shap_vals_gpt2_{config['dataset']}")
-    shap_vals, topic_vals, word_vals, topics, _ = get_topic_shap(model2, x, topics, word2idx, shap_vals)
+    shap_vals, topic_vals, word_vals, topics, _ = get_topic_shap(model2, model1, x, topics, word2idx, shap_vals)
     save(topic_vals, f"topic_vals_gpt2_{config['dataset']}_{config['topics']}")
     save(word_vals, f"word_vals_gpt2_{config['dataset']}_{config['topics']}")
     save(shap_vals, f"shap_vals_gpt2_{config['dataset']}")
