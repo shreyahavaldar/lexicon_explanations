@@ -61,17 +61,20 @@ class LIWCWordData(Dataset):
         liwc_df = liwc_df.groupby(
             by=["term"])["category"].apply(set).reset_index(
             name='groups')
-        liwc_df_train, liwc_df_test = train_test_split(
-            liwc_df, test_size=0.2, random_state=42)
-        liwc_df_val, liwc_df_test = train_test_split(
-            liwc_df_test, test_size=0.5, random_state=42)
 
-        if split == "train":
-            liwc_df = liwc_df_train
-        elif split == "val":
-            liwc_df = liwc_df_val
-        elif split == "test":
-            liwc_df = liwc_df_test
+        # If split is None, then don't split the data
+        if split is not None:
+            liwc_df_train, liwc_df_test = train_test_split(
+                liwc_df, test_size=0.2, random_state=42)
+            liwc_df_val, liwc_df_test = train_test_split(
+                liwc_df_test, test_size=0.5, random_state=42)
+
+            if split == "train":
+                liwc_df = liwc_df_train
+            elif split == "val":
+                liwc_df = liwc_df_val
+            elif split == "test":
+                liwc_df = liwc_df_test
 
         self.data = liwc_df
         self.len = len(liwc_df)
